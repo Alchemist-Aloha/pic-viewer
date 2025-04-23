@@ -821,13 +821,16 @@ onUnmounted(() => {
 }
 
 .sidebar {
-  width: 250px; /* Adjust width as needed */
+  width: 350px; /* Increased width */
+  min-width: 200px; /* Add a minimum width */
+  max-width: 50%; /* Add a maximum width relative to viewport */
+  resize: horizontal; /* Allow horizontal resizing by the user */
+  overflow: auto; /* Needed for resize handle */
   flex-shrink: 0;
   background-color: var(--background); /* Darker background for sidebar */
   border-right: 1px solid var(--current-line); /* Use variable */
   display: flex;
   flex-direction: column;
-  overflow-y: auto; /* Allow scrolling if tree is long */
   color: var(--foreground); /* Use variable */
 }
 
