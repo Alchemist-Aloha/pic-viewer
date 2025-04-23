@@ -24,6 +24,7 @@ const folderTreeRoot = ref<models.Folder | null>(null); // Use namespaced type
 const flatFolderList = ref<string[]>([]); // Add state for flattened folder list
 const leafFolderList = ref<string[]>([]); // Add state for leaf folders only
 const treeError = ref<string>(""); // State for tree loading errors
+const lastVisitedFolder = ref<string>(""); // State for the previously visited folder
 const preloadedImageSrc = ref<string>(""); // State for preloaded image data
 const preloadedIndex = ref<number>(-1); // State for the index of the preloaded image
 const preloadedFolder = ref<string>(""); // State for the folder of the preloaded image
@@ -171,8 +172,15 @@ async function handleFolderSelected(selectedPath: string) {
         return;
     }
 
+    // Store the current folder as the last visited *before* changing it
+    // Make sure we don't store an empty string if it's the first selection
+    if (currentFolder.value && currentFolder.value !== selectedPath) {
+        lastVisitedFolder.value = currentFolder.value;
+        console.log("Last visited folder set to:", lastVisitedFolder.value);
+    }
+
     // Only load images for the selected folder
-    await loadImagesForPath(selectedPath);
+    await loadImagesForPath(selectedPath); // This updates currentFolder.value internally
 
     // Clear preload state when changing folders this way too
     preloadedImageSrc.value = "";
@@ -184,6 +192,16 @@ async function handleFolderSelected(selectedPath: string) {
 function handleFolderSelectedFromTree(path: string) {
     // This now calls the simplified handler that only loads images
     handleFolderSelected(path);
+}
+
+// Function to navigate back to the last visited folder
+function goToLastVisitedFolder() {
+    if (!lastVisitedFolder.value || isTreeLoading.value) {
+        console.log("No last visited folder stored or tree is loading.");
+        return;
+    }
+    // Navigate back. Note: This will update lastVisitedFolder again with the *current* folder.
+    handleFolderSelected(lastVisitedFolder.value);
 }
 
 // Function to preload the next image (conditionally disabled during random slideshow)
@@ -632,6 +650,32 @@ function goToNextLeafFolder() {
     }
 }
 
+// Function to navigate to the previous folder in the leaf list
+function goToPrevLeafFolder() {
+    if (leafFolderList.value.length < 2 || isTreeLoading.value) return; // Need at least two leaf folders
+
+    const currentLeafIndex = leafFolderList.value.indexOf(currentFolder.value);
+
+    if (currentLeafIndex === -1) {
+        // Current folder is not a leaf folder. Maybe go to the *last* leaf folder?
+        // Or find the leaf *before* the current non-leaf folder in the flat list?
+        // For simplicity, let's go to the last leaf folder if current isn't a leaf.
+        handleFolderSelected(leafFolderList.value[leafFolderList.value.length - 1]);
+        return;
+    }
+
+    const prevLeafIndex = currentLeafIndex - 1;
+
+    if (prevLeafIndex >= 0) {
+        // Go to the previous leaf folder
+        handleFolderSelected(leafFolderList.value[prevLeafIndex]);
+    } else {
+        // Reached the beginning of the leaf folder list
+        console.log("First leaf folder reached.");
+        // Optionally wrap around: handleFolderSelected(leafFolderList.value[leafFolderList.value.length - 1]);
+    }
+}
+
 // Computed style for the image
 const imageStyle = computed<CSSProperties>(() => ({
   transform: `scale(${zoomLevel.value})`,
@@ -704,14 +748,17 @@ onUnmounted(() => {
           <button @click="prevImage" :disabled="isLoading || images.length < 2">Previous</button>
           <span v-if="images.length > 0">{{ currentIndex + 1 }} / {{ images.length }}</span>
           <button @click="nextImage" :disabled="isLoading || images.length < 2">Next</button>
-          <!-- <button @click="toggleSlideshow" :disabled="isLoading || images.length < 2">
-            {{ slideshowActive ? 'Stop Slideshow' : 'Start Slideshow' }}
-          </button> -->
-          <button @click="goToRandomFolder" :disabled="isTreeLoading || leafFolderList.length === 0" title="Go to a random leaf folder in the tree">
-            Random Folder
+          <button @click="goToLastVisitedFolder" :disabled="isTreeLoading || !lastVisitedFolder" title="Go to the previously visited folder">
+            Last Visited
+          </button>
+          <button @click="goToPrevLeafFolder" :disabled="isTreeLoading || leafFolderList.length < 2" title="Go to the previous leaf folder in the tree">
+            Prev Folder
           </button>
           <button @click="goToNextLeafFolder" :disabled="isTreeLoading || leafFolderList.length < 2" title="Go to the next leaf folder in the tree">
             Next Folder
+          </button>
+          <button @click="goToRandomFolder" :disabled="isTreeLoading || leafFolderList.length === 0" title="Go to a random leaf folder in the tree">
+            Random Folder
           </button>
           <!-- Slideshow Controls -->
           <div class="slideshow-controls">
