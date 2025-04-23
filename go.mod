@@ -2,7 +2,10 @@ module pic-viewer
 
 go 1.23
 
-require github.com/wailsapp/wails/v2 v2.10.1
+require (
+	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
+	github.com/wailsapp/wails/v2 v2.10.1
+)
 
 require (
 	github.com/bep/debounce v1.2.1 // indirect

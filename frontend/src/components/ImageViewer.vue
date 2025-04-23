@@ -21,6 +21,9 @@ const zoomStep = 0.1;
 const folderTreeRoot = ref<models.Folder | null>(null); // Use namespaced type
 const flatFolderList = ref<string[]>([]); // Add state for flattened folder list
 const treeError = ref<string>(""); // State for tree loading errors
+const preloadedImageSrc = ref<string>(""); // State for preloaded image data
+const preloadedIndex = ref<number>(-1); // State for the index of the preloaded image
+const preloadedFolder = ref<string>(""); // State for the folder of the preloaded image
 
 // Function to get the parent directory path
 // Basic implementation, might need refinement for edge cases (root drives)
@@ -60,6 +63,9 @@ async function loadImagesForPath(folderPath: string) {
   stopSlideshow();
   zoomLevel.value = 1;
   currentFolder.value = folderPath; // Update current folder state
+  preloadedImageSrc.value = ""; // Clear preload
+  preloadedIndex.value = -1;
+  preloadedFolder.value = "";
   try {
     images.value = await ListImages(folderPath);
     currentIndex.value = images.value.length > 0 ? 0 : -1;
@@ -141,11 +147,73 @@ async function handleFolderSelected(selectedPath: string) {
          // This might be redundant if loadImagesForPath already sets it, but safe to keep
          currentFolder.value = selectedPath;
     }
+    preloadedImageSrc.value = ""; // Clear preload
+    preloadedIndex.value = -1;
+    preloadedFolder.value = "";
 }
 
 // Handler for the event emitted by FolderTree component
 function handleFolderSelectedFromTree(path: string) {
     handleFolderSelected(path);
+}
+
+// Function to preload the next image
+async function preloadNextImage() {
+  preloadedImageSrc.value = ""; // Clear previous preload
+  preloadedIndex.value = -1;
+  preloadedFolder.value = "";
+
+  if (images.value.length < 1) return; // No images to preload
+
+  let nextIdx = currentIndex.value + 1;
+  let nextFolder = currentFolder.value;
+  let nextImagePath = "";
+
+  if (nextIdx >= images.value.length) {
+    // Need to potentially move to the next folder
+    const currentFolderIndexInFlatList = flatFolderList.value.indexOf(currentFolder.value);
+    if (currentFolderIndexInFlatList !== -1 && currentFolderIndexInFlatList < flatFolderList.value.length - 1) {
+      // There is a next folder in the flattened list
+      nextFolder = flatFolderList.value[currentFolderIndexInFlatList + 1];
+      try {
+        // Need to list images in the next folder to get the first one
+        const nextFolderImages = await ListImages(nextFolder);
+        if (nextFolderImages.length > 0) {
+          nextImagePath = nextFolderImages[0];
+          nextIdx = 0; // Index within the next folder
+        } else {
+          // Next folder is empty, can't preload
+          return;
+        }
+      } catch (err) {
+        LogError(`Error listing images in next folder for preload: ${err}`);
+        return; // Can't preload if listing fails
+      }
+    } else {
+      // Last image of the last folder, nothing more to preload
+      return;
+    }
+  } else {
+    // Next image is within the current folder
+    nextImagePath = images.value[nextIdx];
+  }
+
+  if (!nextImagePath) return; // Safety check
+
+  // console.log(`Preloading: Folder=${nextFolder}, Index=${nextIdx}, Path=${nextImagePath}`);
+  try {
+    const data = await ReadImage(nextImagePath);
+    preloadedImageSrc.value = data;
+    preloadedIndex.value = nextIdx;
+    preloadedFolder.value = nextFolder;
+    // console.log(`Preloaded successfully: Index=${nextIdx} in Folder=${nextFolder}`);
+  } catch (err) {
+    LogError(`Error preloading image ${nextImagePath}: ${err}`);
+    // Clear preload state on error
+    preloadedImageSrc.value = "";
+    preloadedIndex.value = -1;
+    preloadedFolder.value = "";
+  }
 }
 
 async function displayCurrentImage() {
@@ -155,10 +223,16 @@ async function displayCurrentImage() {
     try {
       const imagePath = images.value[currentIndex.value];
       currentImageSrc.value = await ReadImage(imagePath);
+      // Trigger preload after current image is displayed
+      preloadNextImage(); // Call preload here
     } catch (err) {
       LogError("Error reading image: " + err);
       console.error("Error reading image:", err);
       currentImageSrc.value = ""; // Clear image on error
+      // Clear preload if current image fails to load
+      preloadedImageSrc.value = "";
+      preloadedIndex.value = -1;
+      preloadedFolder.value = "";
     } finally {
       isLoading.value = false;
     }
@@ -171,32 +245,60 @@ async function displayCurrentImage() {
 function nextImage() {
   if (images.value.length === 0) return;
 
-  const isLastImage = currentIndex.value === images.value.length - 1;
+  let targetIdx = currentIndex.value + 1;
+  let targetFolder = currentFolder.value;
+  let isMovingFolder = false;
 
-  if (isLastImage && flatFolderList.value.length > 0) {
-    const currentFolderIndex = flatFolderList.value.indexOf(currentFolder.value);
-    if (currentFolderIndex !== -1 && currentFolderIndex < flatFolderList.value.length - 1) {
-      // Found current folder and it's not the last in the list
-      const nextFolderPath = flatFolderList.value[currentFolderIndex + 1];
-      console.log(`End of folder ${currentFolder.value}, moving to next: ${nextFolderPath}`);
-      handleFolderSelected(nextFolderPath); // Load the next folder
+  if (targetIdx >= images.value.length) {
+    // Check if moving to next folder is possible
+    const currentFolderIndexInFlatList = flatFolderList.value.indexOf(currentFolder.value);
+    if (currentFolderIndexInFlatList !== -1 && currentFolderIndexInFlatList < flatFolderList.value.length - 1) {
+      targetFolder = flatFolderList.value[currentFolderIndexInFlatList + 1];
+      targetIdx = 0; // Index in the new folder
+      isMovingFolder = true;
     } else {
-      // It's the last image of the last folder in the list, do nothing (or loop?)
       console.log("Last image of the last folder reached.");
-      // Optionally, could loop back to the first image of the first folder:
-      // handleFolderSelected(flatFolderList.value[0]);
+      return; // Stop at the end
     }
+  }
+
+  // Check if the target image is the one we preloaded
+  if (!isMovingFolder && targetIdx === preloadedIndex.value && targetFolder === preloadedFolder.value && preloadedImageSrc.value) {
+    // console.log(`Using preloaded image: Index=${targetIdx}`);
+    isLoading.value = true; // Briefly set loading to prevent flickering/double actions
+    currentImageSrc.value = preloadedImageSrc.value;
+    currentIndex.value = targetIdx;
+    zoomLevel.value = 1; // Reset zoom
+
+    // Clear the used preload data
+    preloadedImageSrc.value = "";
+    preloadedIndex.value = -1;
+    preloadedFolder.value = "";
+
+    // Trigger the next preload
+    preloadNextImage();
+    isLoading.value = false; // Loading finished
+
+  } else if (isMovingFolder) {
+    // Moving to a new folder, handle selection which includes loading and preloading
+    handleFolderSelected(targetFolder);
   } else {
-    // Not the last image, just move to the next one in the current folder
-    currentIndex.value = (currentIndex.value + 1) % images.value.length;
-    displayCurrentImage();
+    // Preloaded image not available or not matching, load normally
+    // console.log(`Loading image normally: Index=${targetIdx}`);
+    currentIndex.value = targetIdx;
+    displayCurrentImage(); // This will load the image and trigger the next preload
   }
 }
 
 function prevImage() {
   if (images.value.length === 0) return;
+  // Clear preload when going back
+  preloadedImageSrc.value = "";
+  preloadedIndex.value = -1;
+  preloadedFolder.value = "";
+
   currentIndex.value = (currentIndex.value - 1 + images.value.length) % images.value.length;
-  displayCurrentImage();
+  displayCurrentImage(); // This will trigger preload for the *next* image relative to the new current one
 }
 
 function startSlideshow() {

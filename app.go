@@ -1,14 +1,24 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
+	"image"
+	"image/png" // Import PNG encoder
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	// Import local raw package
+	"pic-viewer/raw"
+
+	// Keep other decoders if needed for other formats
+	_ "image/gif"
+	_ "image/jpeg"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -50,20 +60,24 @@ func (a *App) SelectFolder() (string, error) {
 func (a *App) ListImages(dirPath string) ([]string, error) {
 	var imageFiles []string
 	validExtensions := map[string]bool{
+		// Standard formats
 		".jpg":  true,
 		".jpeg": true,
 		".png":  true,
 		".gif":  true,
 		".bmp":  true,
 		".webp": true,
-		// Add other extensions if needed
+		// Fuji RAW format handled by local package
+		".raf": true,
+		// Add other RAW formats if needed and handled by other libraries
+		// ".cr2": true, ... etc
 	}
 
+	// ...existing WalkDir logic...
 	err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		// Only process files directly within the selected directory (not subdirs)
 		if !d.IsDir() && filepath.Dir(path) == dirPath {
 			ext := strings.ToLower(filepath.Ext(path))
 			if validExtensions[ext] {
@@ -73,40 +87,86 @@ func (a *App) ListImages(dirPath string) ([]string, error) {
 		return nil
 	})
 
+	// ...existing error handling and sorting...
 	if err != nil {
 		return nil, err
 	}
+	sort.Strings(imageFiles)
 	return imageFiles, nil
 }
 
-// ReadImage reads an image file and returns its base64 encoded content
+// ReadImage reads an image file (including HDR and RAF) and returns its base64 encoded content
 func (a *App) ReadImage(filePath string) (string, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return "", err
-	}
-	// Determine mime type (optional but good for data URI)
-	// For simplicity, we'll rely on browser detection or common types
-	// A more robust solution would use net/http.DetectContentType
-	var mimeType string
 	ext := strings.ToLower(filepath.Ext(filePath))
-	switch ext {
-	case ".jpg", ".jpeg":
-		mimeType = "image/jpeg"
-	case ".png":
-		mimeType = "image/png"
-	case ".gif":
-		mimeType = "image/gif"
-	case ".bmp":
-		mimeType = "image/bmp"
-	case ".webp":
-		mimeType = "image/webp"
-	default:
-		mimeType = "application/octet-stream" // Fallback
+
+	// Handle RAF files using the local raw package
+	if ext == ".raf" {
+		// Use panic recovery in case raw.ReadRAF panics
+		defer func() {
+			if r := recover(); r != nil {
+				// Log the panic and return an error
+				errMsg := fmt.Sprintf("panic occurred while decoding RAF file %s: %v", filePath, r)
+				runtime.LogError(a.ctx, errMsg)
+				// Consider returning a specific error message or a placeholder
+				// For now, just propagate the panic message as an error
+				// Note: This error won't be returned directly due to defer, need a named return or other mechanism if specific error needed
+			}
+		}()
+
+		rafData := raw.ReadRAF(filePath) // This might panic based on the raw.go code
+		if rafData == nil || len(rafData.Jpeg) == 0 {
+			return "", fmt.Errorf("failed to extract JPEG from RAF file %s", filePath)
+		}
+		// Encode the extracted JPEG data directly
+		encoded := base64.StdEncoding.EncodeToString(rafData.Jpeg)
+		return fmt.Sprintf("data:image/jpeg;base64,%s", encoded), nil
 	}
 
-	encoded := base64.StdEncoding.EncodeToString(data)
-	return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded), nil
+	// Handle other formats (including HDR) using image.Decode
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file %s: %w", filePath, err)
+	}
+	defer file.Close()
+
+	img, formatName, decodeErr := image.Decode(file)
+	if decodeErr != nil {
+		// Fallback for formats not handled by image.Decode (e.g., some BMP, WebP)
+		file.Seek(0, 0)
+		data, readErr := os.ReadFile(filePath)
+		if readErr != nil {
+			return "", fmt.Errorf("failed to decode or read file %s: decodeErr=%v, readErr=%w", filePath, decodeErr, readErr)
+		}
+		var mimeType string
+		switch ext {
+		case ".jpg", ".jpeg":
+			mimeType = "image/jpeg"
+		case ".png":
+			mimeType = "image/png"
+		case ".gif":
+			mimeType = "image/gif"
+		case ".bmp":
+			mimeType = "image/bmp"
+		case ".webp":
+			mimeType = "image/webp"
+		default:
+			mimeType = "application/octet-stream"
+		}
+		encoded := base64.StdEncoding.EncodeToString(data)
+		return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded), nil
+	}
+
+	runtime.LogInfof(a.ctx, "Decoded format: %s for file %s", formatName, filePath)
+
+	// Encode successfully decoded images (non-RAF, non-fallback) as PNG
+	var buf bytes.Buffer
+	encodeErr := png.Encode(&buf, img)
+	if encodeErr != nil {
+		return "", fmt.Errorf("failed to encode image %s to PNG: %w", filePath, encodeErr)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
+	return fmt.Sprintf("data:image/png;base64,%s", encoded), nil
 }
 
 // Folder represents a directory in the tree view
