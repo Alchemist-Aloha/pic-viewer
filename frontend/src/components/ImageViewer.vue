@@ -462,27 +462,57 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* Dracula Color Palette */
+:root {
+  --background: #282a36;
+  --current-line: #44475a;
+  --foreground: #f8f8f2;
+  --comment: #6272a4;
+  --cyan: #8be9fd;
+  --green: #50fa7b;
+  --orange: #ffb86c;
+  --pink: #ff79c6;
+  --purple: #bd93f9;
+  --red: #ff5555;
+  --yellow: #f1fa8c;
+}
+
+/* Move variables outside :root to be accessible within scoped component */
 .layout-container {
+  --background: #282a36;
+  --current-line: #44475a;
+  --foreground: #f8f8f2;
+  --comment: #6272a4;
+  --cyan: #8be9fd;
+  --green: #50fa7b;
+  --orange: #ffb86c;
+  --pink: #ff79c6;
+  --purple: #bd93f9;
+  --red: #ff5555;
+  --yellow: #f1fa8c;
+  
   display: flex;
   height: 100vh;
   width: 100vw;
   overflow: hidden; /* Prevent body scroll */
+  background-color: var(--background);
+  color: var(--foreground);
 }
 
 .sidebar {
   width: 250px; /* Adjust width as needed */
   flex-shrink: 0;
-  background-color: #333740; /* Slightly different shade for sidebar */
-  border-right: 1px solid #444;
+  background-color: var(--background); /* Darker background for sidebar */
+  border-right: 1px solid var(--current-line); /* Use variable */
   display: flex;
   flex-direction: column;
   overflow-y: auto; /* Allow scrolling if tree is long */
-  color: #ccc;
+  color: var(--foreground); /* Use variable */
 }
 
 .sidebar-header {
     padding: 10px;
-    border-bottom: 1px solid #444;
+    border-bottom: 1px solid var(--current-line); /* Use variable */
 }
 
 .sidebar-header button {
@@ -494,11 +524,11 @@ onUnmounted(() => {
 .no-tree {
     padding: 15px;
     text-align: center;
-    color: #aaa;
+    color: var(--comment); /* Use variable */
 }
 
 .tree-error {
-    color: #ff8a8a;
+    color: var(--red); /* Use variable */
 }
 
 .folder-tree-container {
@@ -519,15 +549,15 @@ onUnmounted(() => {
   flex-direction: column;
   /* height: 100vh; Remove fixed height, let it fill main-content */
   width: 100%; /* Fill the main-content area */
-  background-color: #282c34;
-  color: white;
+  background-color: var(--background); /* Use variable */
+  color: var(--foreground); /* Use variable */
   font-family: sans-serif;
 }
 
 .controls {
   padding: 10px;
-  background-color: #3c4049;
-  border-bottom: 1px solid #555;
+  background-color: var(--current-line); /* Use variable */
+  border-bottom: 1px solid var(--background); /* Use variable */
   display: flex;
   align-items: center;
   gap: 15px;
@@ -536,7 +566,7 @@ onUnmounted(() => {
 
 .folder-path {
   font-size: 0.9em;
-  color: #ccc;
+  color: var(--foreground); /* Use variable */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -553,6 +583,7 @@ onUnmounted(() => {
   position: relative;
   cursor: grab;
   min-height: 0; /* Important for flex-grow in column layout */
+  background-color: var(--background); /* Ensure viewer bg matches */
 }
 .image-viewer:active {
     cursor: grabbing;
@@ -562,7 +593,7 @@ onUnmounted(() => {
 .no-images,
 .no-folder {
   font-size: 1.2em;
-  color: #aaa;
+  color: var(--comment); /* Use variable */
   padding: 20px;
 }
 
@@ -572,8 +603,8 @@ onUnmounted(() => {
 
 .navigation {
   padding: 10px;
-  background-color: #3c4049;
-  border-top: 1px solid #555;
+  background-color: var(--current-line); /* Use variable */
+  border-top: 1px solid var(--background); /* Use variable */
   display: flex;
   justify-content: center;
   align-items: center;
@@ -583,22 +614,22 @@ onUnmounted(() => {
 
 button {
   padding: 8px 15px;
-  background-color: #61dafb;
+  background-color: var(--purple); /* Use variable */
   border: none;
   border-radius: 4px;
-  color: #282c34;
+  color: var(--foreground); /* Use variable */
   cursor: pointer;
   font-weight: bold;
   transition: background-color 0.2s ease;
 }
 
 button:hover:not(:disabled) {
-  background-color: #4fa8c5;
+  background-color: var(--pink); /* Use variable for hover */
 }
 
 button:disabled {
-  background-color: #555;
-  color: #999;
+  background-color: var(--comment); /* Use comment color for background */
+  color: var(--background); /* Use background color for text for better contrast */
   cursor: not-allowed;
 }
 

@@ -69,8 +69,6 @@ func (a *App) ListImages(dirPath string) ([]string, error) {
 		".webp": true,
 		// Fuji RAW format handled by local package
 		".raf": true,
-		// Add other RAW formats if needed and handled by other libraries
-		// ".cr2": true, ... etc
 	}
 
 	// ...existing WalkDir logic...

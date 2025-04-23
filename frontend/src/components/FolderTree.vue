@@ -70,6 +70,8 @@ if (isSelectedOrParentOfSelected.value) {
 </template>
 
 <style scoped>
+/* Inherit variables from parent or define locally if needed */
+
 .folder-node {
   /* Spacing between nodes if needed */
 }
@@ -82,14 +84,16 @@ if (isSelectedOrParentOfSelected.value) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* color: inherit; */ /* Inherit from parent by default */
 }
 
 .folder-item:hover {
-  background-color: #4a505a;
+  background-color: var(--current-line); /* Use variable */
 }
 
 .folder-item.selected {
-    background-color: #5a6370; /* Highlight selected folder */
+    background-color: var(--purple); /* Use variable for selected */
+    color: var(--foreground);
     font-weight: bold;
 }
 
@@ -99,7 +103,7 @@ if (isSelectedOrParentOfSelected.value) {
   text-align: center;
   margin-right: 5px;
   font-size: 0.8em;
-  color: #aaa;
+  color: var(--comment); /* Use variable */
 }
 
 .toggle-icon.spacer {
