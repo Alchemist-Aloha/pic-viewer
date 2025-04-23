@@ -297,3 +297,142 @@ onUnmounted(() => {
   display: flex;
   height: 100vh;
   width: 100vw;
+  overflow: hidden; /* Prevent body scroll */
+}
+
+.sidebar {
+  width: 250px; /* Adjust width as needed */
+  flex-shrink: 0;
+  background-color: #333740; /* Slightly different shade for sidebar */
+  border-right: 1px solid #444;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto; /* Allow scrolling if tree is long */
+  color: #ccc;
+}
+
+.sidebar-header {
+    padding: 10px;
+    border-bottom: 1px solid #444;
+}
+
+.sidebar-header button {
+    width: 100%;
+}
+
+.loading-tree,
+.tree-error,
+.no-tree {
+    padding: 15px;
+    text-align: center;
+    color: #aaa;
+}
+
+.tree-error {
+    color: #ff8a8a;
+}
+
+.folder-tree-container {
+    flex-grow: 1;
+    padding: 5px 0; /* Add some padding around the tree */
+    overflow-y: auto; /* Ensure tree itself can scroll if needed */
+}
+
+.main-content {
+  flex-grow: 1;
+  display: flex; /* Use flex to make container fill space */
+  overflow: hidden; /* Prevent overflow issues */
+}
+
+/* Existing container styles adapted */
+.container {
+  display: flex;
+  flex-direction: column;
+  /* height: 100vh; Remove fixed height, let it fill main-content */
+  width: 100%; /* Fill the main-content area */
+  background-color: #282c34;
+  color: white;
+  font-family: sans-serif;
+}
+
+.controls {
+  padding: 10px;
+  background-color: #3c4049;
+  border-bottom: 1px solid #555;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-shrink: 0; /* Prevent controls from shrinking */
+}
+
+.folder-path {
+  font-size: 0.9em;
+  color: #ccc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-grow: 1; /* Allow path to take available space */
+  min-width: 0; /* Important for text-overflow in flex */
+}
+
+.image-viewer {
+  flex-grow: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: auto;
+  position: relative;
+  cursor: grab;
+  min-height: 0; /* Important for flex-grow in column layout */
+}
+.image-viewer:active {
+    cursor: grabbing;
+}
+
+.loading,
+.no-images,
+.no-folder {
+  font-size: 1.2em;
+  color: #aaa;
+  padding: 20px;
+}
+
+.image-viewer img {
+  /* Styles are primarily handled by the computed imageStyle */
+}
+
+.navigation {
+  padding: 10px;
+  background-color: #3c4049;
+  border-top: 1px solid #555;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 15px;
+  flex-shrink: 0; /* Prevent navigation from shrinking */
+}
+
+button {
+  padding: 8px 15px;
+  background-color: #61dafb;
+  border: none;
+  border-radius: 4px;
+  color: #282c34;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background-color 0.2s ease;
+}
+
+button:hover:not(:disabled) {
+  background-color: #4fa8c5;
+}
+
+button:disabled {
+  background-color: #555;
+  color: #999;
+  cursor: not-allowed;
+}
+
+/* Ensure FolderTree component styles are applied (they are scoped) */
+
+</style>
