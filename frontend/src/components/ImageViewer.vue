@@ -13,7 +13,9 @@ const isLoading = ref<boolean>(false);
 const isTreeLoading = ref<boolean>(false);
 const slideshowActive = ref<boolean>(false);
 const slideshowInterval = ref<number | null>(null);
-const slideshowDelay = ref<number>(3000);
+const slideshowDelay = ref<number>(3000); // Default delay
+type SlideshowMode = 'sequence' | 'random-folder' | 'random-all';
+const slideshowMode = ref<SlideshowMode>('sequence'); // Default mode
 const zoomLevel = ref<number>(1);
 const minZoom = 0.2;
 const maxZoom = 5;
@@ -25,6 +27,16 @@ const treeError = ref<string>(""); // State for tree loading errors
 const preloadedImageSrc = ref<string>(""); // State for preloaded image data
 const preloadedIndex = ref<number>(-1); // State for the index of the preloaded image
 const preloadedFolder = ref<string>(""); // State for the folder of the preloaded image
+
+// Computed property for the current filename
+const currentFilename = computed(() => {
+  if (currentIndex.value >= 0 && images.value.length > 0 && currentIndex.value < images.value.length) {
+    const fullPath = images.value[currentIndex.value];
+    // Extract filename from path (works for both / and \)
+    return fullPath.substring(Math.max(fullPath.lastIndexOf('/'), fullPath.lastIndexOf('\\')) + 1);
+  }
+  return ""; // Return empty string if no image is selected/loaded
+});
 
 // Function to get the parent directory path
 // Basic implementation, might need refinement for edge cases (root drives)
@@ -174,41 +186,62 @@ function handleFolderSelectedFromTree(path: string) {
     handleFolderSelected(path);
 }
 
-// Function to preload the next image
+// Function to preload the next image (conditionally disabled during random slideshow)
 async function preloadNextImage() {
+  // Disable preloading if a random slideshow is active
+  if (slideshowActive.value && slideshowMode.value !== 'sequence') {
+      preloadedImageSrc.value = "";
+      preloadedIndex.value = -1;
+      preloadedFolder.value = "";
+      return;
+  }
+
   preloadedImageSrc.value = ""; // Clear previous preload
   preloadedIndex.value = -1;
   preloadedFolder.value = "";
 
-  if (images.value.length < 1) return; // No images to preload
+  if (images.value.length < 1 && flatFolderList.value.length < 1) return; // Nothing to preload if no images and no other folders
 
   let nextIdx = currentIndex.value + 1;
   let nextFolder = currentFolder.value;
   let nextImagePath = "";
 
-  if (nextIdx >= images.value.length) {
-    // Need to potentially move to the next folder
+  // Check if we need to move to the next folder
+  if (images.value.length === 0 || nextIdx >= images.value.length) {
     const currentFolderIndexInFlatList = flatFolderList.value.indexOf(currentFolder.value);
-    if (currentFolderIndexInFlatList !== -1 && currentFolderIndexInFlatList < flatFolderList.value.length - 1) {
-      // There is a next folder in the flattened list
-      nextFolder = flatFolderList.value[currentFolderIndexInFlatList + 1];
-      try {
-        // Need to list images in the next folder to get the first one
-        const nextFolderImages = await ListImages(nextFolder);
-        if (nextFolderImages.length > 0) {
-          nextImagePath = nextFolderImages[0];
-          nextIdx = 0; // Index within the next folder
-        } else {
-          // Next folder is empty, can't preload
-          return;
+    let nextLeafFolderFound = false;
+
+    if (currentFolderIndexInFlatList !== -1) {
+        // Search for the next leaf folder in the flat list
+        for (let i = currentFolderIndexInFlatList + 1; i < flatFolderList.value.length; i++) {
+            const potentialNextFolder = flatFolderList.value[i];
+            if (leafFolderList.value.includes(potentialNextFolder)) {
+                nextFolder = potentialNextFolder;
+                nextLeafFolderFound = true;
+                break; // Found the next leaf folder
+            }
         }
-      } catch (err) {
-        LogError(`Error listing images in next folder for preload: ${err}`);
-        return; // Can't preload if listing fails
+    }
+
+    if (!nextLeafFolderFound) {
+        // console.log("Preload: No subsequent leaf folder found in flat list.");
+        return; // Last image of the last leaf folder (or no leaf folders after current)
+    }
+
+    // Found the next leaf folder, try to get its first image
+    try {
+      const nextFolderImages = await ListImages(nextFolder);
+      if (nextFolderImages.length > 0) {
+        nextImagePath = nextFolderImages[0];
+        nextIdx = 0; // Index within the next folder
+      } else {
+        // Next leaf folder is empty, can't preload from it
+        // console.log(`Preload: Next leaf folder ${nextFolder} is empty.`);
+        return;
       }
-    } else {
-      // Last image of the last folder, nothing more to preload
-      return;
+    } catch (err) {
+      LogError(`Error listing images in next leaf folder ${nextFolder} for preload: ${err}`);
+      return; // Can't preload if listing fails
     }
   } else {
     // Next image is within the current folder
@@ -240,8 +273,8 @@ async function displayCurrentImage() {
     try {
       const imagePath = images.value[currentIndex.value];
       currentImageSrc.value = await ReadImage(imagePath);
-      // Trigger preload after current image is displayed
-      preloadNextImage(); // Call preload here
+      // Trigger preload after current image is displayed (respecting slideshow mode)
+      preloadNextImage(); // Call preload here (it checks internally)
     } catch (err) {
       LogError("Error reading image: " + err);
       console.error("Error reading image:", err);
@@ -256,75 +289,224 @@ async function displayCurrentImage() {
   } else {
     currentImageSrc.value = ""; // No image to display
     zoomLevel.value = 1; // Reset zoom
+    // Attempt to preload if we landed here from an empty folder during sequence
+    if (slideshowMode.value === 'sequence') {
+        preloadNextImage();
+    }
   }
 }
 
-function nextImage() {
-  if (images.value.length === 0) return;
+// Helper for random image within the current folder
+function displayRandomImageInFolder() {
+    if (images.value.length < 1) return; // Nothing to randomize
+
+    let randomIndex;
+    if (images.value.length === 1) {
+        randomIndex = 0; // Only one image
+    } else {
+        // Try to pick a different image than the current one
+        do {
+            randomIndex = Math.floor(Math.random() * images.value.length);
+        } while (randomIndex === currentIndex.value);
+    }
+    currentIndex.value = randomIndex;
+    displayCurrentImage(); // Display the randomly selected image
+}
+
+// Helper for random image across all leaf folders
+async function displayRandomImageInAllFolders() {
+    if (leafFolderList.value.length === 0) return; // No folders to choose from
+
+    try {
+        isLoading.value = true; // Show loading indicator during potential folder switch
+        const randomFolderPath = leafFolderList.value[Math.floor(Math.random() * leafFolderList.value.length)];
+        const randomFolderImages = await ListImages(randomFolderPath);
+
+        if (randomFolderImages.length > 0) {
+            const randomImageIndex = Math.floor(Math.random() * randomFolderImages.length);
+            const randomImagePath = randomFolderImages[randomImageIndex];
+
+            // Update state regardless of whether the folder changed
+            currentFolder.value = randomFolderPath;
+            images.value = randomFolderImages;
+            currentIndex.value = randomImageIndex;
+
+            // Now display the chosen image
+            currentImageSrc.value = await ReadImage(randomImagePath);
+            zoomLevel.value = 1; // Reset zoom
+
+        } else {
+            // Selected random folder was empty, maybe try again or just skip?
+            console.warn(`Randomly selected folder ${randomFolderPath} was empty.`);
+            // Optionally, call the function again to try another folder:
+            // displayRandomImageInAllFolders();
+        }
+    } catch (err) {
+        LogError(`Error during random-all slideshow: ${err}`);
+        console.error("Error during random-all slideshow:", err);
+        // Clear image on error
+        currentImageSrc.value = "";
+        images.value = [];
+        currentIndex.value = -1;
+    } finally {
+        isLoading.value = false;
+    }
+}
+
+
+async function nextImage() { // Add async here
+  // This function now primarily handles sequential 'next' for manual controls and sequence slideshow
+  if (images.value.length === 0 && flatFolderList.value.length === 0) return; // Nothing to navigate
 
   let targetIdx = currentIndex.value + 1;
   let targetFolder = currentFolder.value;
   let isMovingFolder = false;
 
-  if (targetIdx >= images.value.length) {
-    // Check if moving to next folder is possible
+  // Handle moving past the end of the current folder's images
+  if (images.value.length === 0 || targetIdx >= images.value.length) {
     const currentFolderIndexInFlatList = flatFolderList.value.indexOf(currentFolder.value);
-    if (currentFolderIndexInFlatList !== -1 && currentFolderIndexInFlatList < flatFolderList.value.length - 1) {
-      targetFolder = flatFolderList.value[currentFolderIndexInFlatList + 1];
-      targetIdx = 0; // Index in the new folder
-      isMovingFolder = true;
-    } else {
-      console.log("Last image of the last folder reached.");
-      return; // Stop at the end
+    let nextLeafFolderFound = false;
+
+    if (currentFolderIndexInFlatList !== -1) {
+        // Search for the next leaf folder in the flat list
+        for (let i = currentFolderIndexInFlatList + 1; i < flatFolderList.value.length; i++) {
+            const potentialNextFolder = flatFolderList.value[i];
+            if (leafFolderList.value.includes(potentialNextFolder)) {
+                targetFolder = potentialNextFolder;
+                targetIdx = 0; // Index in the new folder
+                isMovingFolder = true;
+                nextLeafFolderFound = true;
+                break; // Found the next leaf folder
+            }
+        }
+    }
+
+    if (!nextLeafFolderFound) {
+        console.log("Last image of the last leaf folder reached (sequence).");
+        stopSlideshow(); // Stop slideshow if it was running sequentially
+        return; // Do not proceed further
     }
   }
 
-  // Check if the target image is the one we preloaded
-  if (!isMovingFolder && targetIdx === preloadedIndex.value && targetFolder === preloadedFolder.value && preloadedImageSrc.value) {
-    // console.log(`Using preloaded image: Index=${targetIdx}`);
-    isLoading.value = true; // Briefly set loading to prevent flickering/double actions
+  // Check if the target image is the one we preloaded (only relevant for sequence)
+  if (isMovingFolder && targetFolder === preloadedFolder.value && targetIdx === preloadedIndex.value && preloadedImageSrc.value) {
+     // Using preloaded image from the *start* of the next leaf folder
+    // console.log(`Using preloaded image from next leaf folder: Folder=${targetFolder}, Index=${targetIdx}`);
+    isLoading.value = true;
     currentImageSrc.value = preloadedImageSrc.value;
+    currentFolder.value = targetFolder; // Update current folder
+    // Need to load images for the new folder to update the list and count
+    images.value = await ListImages(targetFolder); // Await this!
     currentIndex.value = targetIdx;
-    zoomLevel.value = 1; // Reset zoom
+    zoomLevel.value = 1;
 
-    // Clear the used preload data
     preloadedImageSrc.value = "";
     preloadedIndex.value = -1;
     preloadedFolder.value = "";
 
-    // Trigger the next preload
-    preloadNextImage();
-    isLoading.value = false; // Loading finished
+    preloadNextImage(); // Trigger preload for the image *after* this one
+    isLoading.value = false;
 
   } else if (isMovingFolder) {
-    // Moving to a new folder, handle selection which includes loading and preloading
+    // Moving to a new leaf folder, but preload didn't match (or wasn't ready)
+    // console.log(`Moving to next leaf folder (no preload match): ${targetFolder}`);
+    // Use handleFolderSelected which loads images, displays first, and triggers preload
     handleFolderSelected(targetFolder);
+
+  } else if (!isMovingFolder && slideshowMode.value === 'sequence' && targetIdx === preloadedIndex.value && targetFolder === preloadedFolder.value && preloadedImageSrc.value) {
+    // Using preloaded image within the *same* folder
+    // console.log(`Using preloaded image within same folder: Index=${targetIdx}`);
+    isLoading.value = true;
+    currentImageSrc.value = preloadedImageSrc.value;
+    currentIndex.value = targetIdx;
+    zoomLevel.value = 1;
+
+    preloadedImageSrc.value = "";
+    preloadedIndex.value = -1;
+    preloadedFolder.value = "";
+
+    preloadNextImage();
+    isLoading.value = false;
+
   } else {
-    // Preloaded image not available or not matching, load normally
+    // Preloaded image not available/matching, or not in sequence mode, or just moving within current folder. Load normally.
     // console.log(`Loading image normally: Index=${targetIdx}`);
     currentIndex.value = targetIdx;
-    displayCurrentImage(); // This will load the image and trigger the next preload
+    displayCurrentImage(); // This will load the image and trigger the next preload (if applicable)
   }
 }
 
 function prevImage() {
+  // Previous always works sequentially within the current folder for simplicity
   if (images.value.length === 0) return;
-  // Clear preload when going back
+
+  // Clear preload when going back manually
   preloadedImageSrc.value = "";
   preloadedIndex.value = -1;
   preloadedFolder.value = "";
 
-  currentIndex.value = (currentIndex.value - 1 + images.value.length) % images.value.length;
+  let targetIdx = currentIndex.value - 1;
+  if (targetIdx < 0) {
+      // TODO: Optionally implement moving to the *last* image of the *previous* folder
+      // For now, wrap around within the current folder
+      targetIdx = images.value.length - 1;
+  }
+
+  currentIndex.value = targetIdx;
   displayCurrentImage(); // This will trigger preload for the *next* image relative to the new current one
 }
 
 function startSlideshow() {
-  if (slideshowActive.value || images.value.length < 2) return;
+  // Validate delay
+  if (isNaN(slideshowDelay.value) || slideshowDelay.value < 500) {
+      slideshowDelay.value = 500; // Enforce minimum delay
+  }
+
+  // Conditions to prevent starting
+  if (slideshowActive.value) return;
+  if (slideshowMode.value === 'sequence' && images.value.length < 1 && flatFolderList.value.length < 2) return; // Need something to sequence through
+  if (slideshowMode.value === 'random-folder' && images.value.length < 1) return;
+  if (slideshowMode.value === 'random-all' && leafFolderList.value.length < 1) return;
+
+  // Clear preload when starting random slideshows
+  if (slideshowMode.value !== 'sequence') {
+      preloadedImageSrc.value = "";
+      preloadedIndex.value = -1;
+      preloadedFolder.value = "";
+  }
+
   slideshowActive.value = true;
+  console.log(`Starting slideshow: Mode=${slideshowMode.value}, Delay=${slideshowDelay.value}`);
+
+  // Initial action based on mode
+  switch (slideshowMode.value) {
+      case 'sequence':
+          nextImage(); // Start with the next sequential image
+          break;
+      case 'random-folder':
+          displayRandomImageInFolder();
+          break;
+      case 'random-all':
+          displayRandomImageInAllFolders();
+          break;
+  }
+
+  // Set interval for subsequent actions
   slideshowInterval.value = window.setInterval(() => {
-    nextImage();
+    switch (slideshowMode.value) {
+      case 'sequence':
+        nextImage();
+        break;
+      case 'random-folder':
+        displayRandomImageInFolder();
+        break;
+      case 'random-all':
+        displayRandomImageInAllFolders();
+        break;
+    }
   }, slideshowDelay.value);
 }
+
 
 function stopSlideshow() {
   if (slideshowInterval.value !== null) {
@@ -332,6 +514,7 @@ function stopSlideshow() {
     slideshowInterval.value = null;
   }
   slideshowActive.value = false;
+  console.log("Slideshow stopped.");
 }
 
 function toggleSlideshow() {
@@ -423,6 +606,32 @@ function goToRandomFolder() {
   }
 }
 
+// Function to navigate to the next folder in the leaf list
+function goToNextLeafFolder() {
+    if (leafFolderList.value.length < 2 || isTreeLoading.value) return; // Need at least two leaf folders
+
+    const currentLeafIndex = leafFolderList.value.indexOf(currentFolder.value);
+
+    if (currentLeafIndex === -1) {
+        // Current folder is not a leaf folder, maybe go to the first leaf?
+        // Or find the next leaf *after* the current non-leaf folder in the flat list?
+        // For simplicity, let's just go to the first leaf if current isn't a leaf.
+        handleFolderSelected(leafFolderList.value[0]);
+        return;
+    }
+
+    const nextLeafIndex = currentLeafIndex + 1;
+
+    if (nextLeafIndex < leafFolderList.value.length) {
+        // Go to the next leaf folder
+        handleFolderSelected(leafFolderList.value[nextLeafIndex]);
+    } else {
+        // Reached the end of the leaf folder list
+        console.log("Last leaf folder reached.");
+        // Optionally wrap around: handleFolderSelected(leafFolderList.value[0]);
+    }
+}
+
 // Computed style for the image
 const imageStyle = computed<CSSProperties>(() => ({
   transform: `scale(${zoomLevel.value})`,
@@ -473,6 +682,8 @@ onUnmounted(() => {
           <!-- Folder path display moved here or could be removed if tree is primary -->
           <span v-if="currentFolder" class="folder-path">Current: {{ currentFolder }}</span>
           <span v-else>No folder selected</span>
+          <!-- Current filename display -->
+          <span v-if="currentFilename" class="file-name" :title="currentFilename">File: {{ currentFilename }}</span>
         </div>
 
         <div class="image-viewer" @wheel="handleWheel">
@@ -493,12 +704,31 @@ onUnmounted(() => {
           <button @click="prevImage" :disabled="isLoading || images.length < 2">Previous</button>
           <span v-if="images.length > 0">{{ currentIndex + 1 }} / {{ images.length }}</span>
           <button @click="nextImage" :disabled="isLoading || images.length < 2">Next</button>
-          <button @click="toggleSlideshow" :disabled="isLoading || images.length < 2">
+          <!-- <button @click="toggleSlideshow" :disabled="isLoading || images.length < 2">
             {{ slideshowActive ? 'Stop Slideshow' : 'Start Slideshow' }}
-          </button>
+          </button> -->
           <button @click="goToRandomFolder" :disabled="isTreeLoading || leafFolderList.length === 0" title="Go to a random leaf folder in the tree">
             Random Folder
           </button>
+          <button @click="goToNextLeafFolder" :disabled="isTreeLoading || leafFolderList.length < 2" title="Go to the next leaf folder in the tree">
+            Next Folder
+          </button>
+          <!-- Slideshow Controls -->
+          <div class="slideshow-controls">
+              <button @click="toggleSlideshow"
+                      :disabled="isLoading || (slideshowMode === 'sequence' && images.length < 1 && flatFolderList.length < 2) || (slideshowMode === 'random-folder' && images.length < 1) || (slideshowMode === 'random-all' && leafFolderList.length < 1)">
+                {{ slideshowActive ? 'Stop' : 'Start' }}
+              </button>
+              <select v-model="slideshowMode" :disabled="slideshowActive || isLoading">
+                <option value="sequence">Sequence</option>
+                <option value="random-folder" :disabled="images.length < 1">Random (Folder)</option>
+                <option value="random-all" :disabled="leafFolderList.length < 1">Random (All)</option>
+              </select>
+              <label>
+                Delay (ms):
+                <input type="number" v-model.number="slideshowDelay" min="500" step="100" :disabled="slideshowActive || isLoading" class="delay-input">
+              </label>
+          </div>
         </div>
       </div>
     </div>
@@ -678,5 +908,65 @@ button:disabled {
 }
 
 /* Ensure FolderTree component styles are applied (they are scoped) */
+
+.navigation {
+  /* ... existing navigation styles ... */
+  gap: 5px; /* Adjust gap if needed */
+  flex-wrap: wrap; /* Allow controls to wrap on smaller screens */
+}
+
+.slideshow-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px; /* Gap between slideshow elements */
+    padding: 0 5px; /* Add some padding */
+    border-left: 1px solid var(--background);
+    border-right: 1px solid var(--background);
+}
+
+.slideshow-controls label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.9em;
+}
+
+.delay-input {
+    width: 60px; /* Adjust width as needed */
+    padding: 4px;
+    background-color: var(--background);
+    color: var(--foreground);
+    border: 1px solid var(--comment);
+    border-radius: 3px;
+}
+.delay-input:disabled {
+    background-color: var(--current-line);
+    cursor: not-allowed;
+}
+
+select {
+    padding: 6px 8px;
+    background-color: var(--purple);
+    color: var(--foreground);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+select:disabled {
+    background-color: var(--comment);
+    color: var(--background);
+    cursor: not-allowed;
+}
+
+select:hover:not(:disabled) {
+    background-color: var(--pink);
+}
+
+/* Adjust button padding if needed */
+button {
+  padding: 6px 12px; /* Slightly reduced padding */
+}
 
 </style>
