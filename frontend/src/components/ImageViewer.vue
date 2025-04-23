@@ -1,7 +1,6 @@
 <script lang="ts" setup>
 import { ref, reactive, onMounted, onUnmounted, computed, CSSProperties, watch } from 'vue';
 import { SelectFolder, ListImages, ReadImage, ListSubfolders } from '../../wailsjs/go/main/App';
-// Import the specific namespace containing the models
 import { main as models } from '../../wailsjs/go/models';
 import { LogError } from '../../wailsjs/runtime/runtime';
 import FolderTree from './FolderTree.vue';
@@ -20,6 +19,7 @@ const minZoom = 0.2;
 const maxZoom = 5;
 const zoomStep = 0.1;
 const folderTreeRoot = ref<models.Folder | null>(null); // Use namespaced type
+const flatFolderList = ref<string[]>([]); // Add state for flattened folder list
 const treeError = ref<string>(""); // State for tree loading errors
 
 // Function to get the parent directory path
@@ -75,18 +75,16 @@ async function loadImagesForPath(folderPath: string) {
   }
 }
 
-// New function to handle folder selection from both button and tree
-async function handleFolderSelected(selectedPath: string) {
-    if (!selectedPath || selectedPath === currentFolder.value) return;
-
-    // Load images for the selected folder
-    await loadImagesForPath(selectedPath);
-
-    // Load or update the folder tree, using parent as root
-    const parentPath = getParentDirectory(selectedPath);
-    if (parentPath && (!folderTreeRoot.value || folderTreeRoot.value.path !== parentPath)) {
-        await loadFolderTree(parentPath);
+// Helper function to flatten the tree (depth-first)
+function flattenTree(node: models.Folder | null): string[] {
+    if (!node) return [];
+    let paths: string[] = [node.path];
+    if (node.children) {
+        for (const child of node.children) {
+            paths = paths.concat(flattenTree(child));
+        }
     }
+    return paths;
 }
 
 // Function to load the folder tree structure
@@ -95,17 +93,53 @@ async function loadFolderTree(basePath: string) {
     isTreeLoading.value = true;
     treeError.value = "";
     folderTreeRoot.value = null;
+    flatFolderList.value = []; // Clear the flat list
     console.log("Loading tree for:", basePath);
     try {
         // Ensure the return type matches the namespaced type
-        folderTreeRoot.value = await ListSubfolders(basePath);
+        const tree = await ListSubfolders(basePath);
+        folderTreeRoot.value = tree;
+        flatFolderList.value = flattenTree(tree); // Update the flat list
         console.log("Tree loaded:", folderTreeRoot.value);
+        console.log("Flat folder list:", flatFolderList.value);
     } catch (err: any) {
         LogError("Error loading folder tree: " + err);
         console.error("Error loading folder tree:", err);
         treeError.value = `Failed to load folder tree: ${err.message || err}`;
     } finally {
         isTreeLoading.value = false;
+    }
+}
+
+// New function to handle folder selection from both button and tree
+async function handleFolderSelected(selectedPath: string) {
+    if (!selectedPath) return; // Don't proceed if path is empty
+
+    // Only reload tree if the root is different or not set
+    const parentPath = getParentDirectory(selectedPath);
+    const needsTreeLoad = parentPath && (!folderTreeRoot.value || folderTreeRoot.value.path !== parentPath);
+
+    // Avoid reloading images if the folder is already selected AND the tree doesn't need reloading
+    // This prevents unnecessary reloads when clicking the already selected folder in the tree
+    if (selectedPath === currentFolder.value && !needsTreeLoad) {
+        console.log("Folder already selected and tree is current, skipping reload.");
+        return;
+    }
+
+    // Load images for the selected folder *before* potentially loading the tree
+    // This makes the UI feel more responsive if the tree load is slow
+    await loadImagesForPath(selectedPath);
+
+    // Load or update the folder tree if necessary
+    if (needsTreeLoad) {
+        await loadFolderTree(parentPath);
+    } else if (!folderTreeRoot.value && parentPath) {
+        // Handle case where a folder was selected but tree wasn't loaded initially
+         await loadFolderTree(parentPath);
+    } else {
+         // Ensure currentFolder is updated even if tree doesn't reload
+         // This might be redundant if loadImagesForPath already sets it, but safe to keep
+         currentFolder.value = selectedPath;
     }
 }
 
@@ -136,8 +170,27 @@ async function displayCurrentImage() {
 
 function nextImage() {
   if (images.value.length === 0) return;
-  currentIndex.value = (currentIndex.value + 1) % images.value.length;
-  displayCurrentImage();
+
+  const isLastImage = currentIndex.value === images.value.length - 1;
+
+  if (isLastImage && flatFolderList.value.length > 0) {
+    const currentFolderIndex = flatFolderList.value.indexOf(currentFolder.value);
+    if (currentFolderIndex !== -1 && currentFolderIndex < flatFolderList.value.length - 1) {
+      // Found current folder and it's not the last in the list
+      const nextFolderPath = flatFolderList.value[currentFolderIndex + 1];
+      console.log(`End of folder ${currentFolder.value}, moving to next: ${nextFolderPath}`);
+      handleFolderSelected(nextFolderPath); // Load the next folder
+    } else {
+      // It's the last image of the last folder in the list, do nothing (or loop?)
+      console.log("Last image of the last folder reached.");
+      // Optionally, could loop back to the first image of the first folder:
+      // handleFolderSelected(flatFolderList.value[0]);
+    }
+  } else {
+    // Not the last image, just move to the next one in the current folder
+    currentIndex.value = (currentIndex.value + 1) % images.value.length;
+    displayCurrentImage();
+  }
 }
 
 function prevImage() {
