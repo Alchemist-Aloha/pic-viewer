@@ -1,9 +1,11 @@
 <script lang="ts" setup>
 import { ref, defineProps, defineEmits, computed } from 'vue';
-import type { Folder } from '../../../wailsjs/go/main/App'; // Adjust path as needed
+// Import the main namespace from models
+import { main } from '../../wailsjs/go/models';
 
-const props = defineProps<{ 
-  folder: Folder;
+const props = defineProps<{
+  // Use the namespaced type
+  folder: main.Folder;
   level?: number; // For indentation
   selectedPath?: string | null;
 }>();

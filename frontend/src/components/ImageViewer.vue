@@ -1,9 +1,10 @@
 <script lang="ts" setup>
-import { ref, reactive, onMounted, onUnmounted, computed, CSSProperties, watch } from 'vue'; // Import watch
-import { SelectFolder, ListImages, ReadImage, ListSubfolders } from '../../wailsjs/go/main/App'; // Import ListSubfolders
-import type { Folder } from '../../../wailsjs/go/main/App'; // Import Folder type
+import { ref, reactive, onMounted, onUnmounted, computed, CSSProperties, watch } from 'vue';
+import { SelectFolder, ListImages, ReadImage, ListSubfolders } from '../../wailsjs/go/main/App';
+// Import the specific namespace containing the models
+import { main as models } from '../../wailsjs/go/models';
 import { LogError } from '../../wailsjs/runtime/runtime';
-import FolderTree from './FolderTree.vue'; // Import FolderTree component
+import FolderTree from './FolderTree.vue';
 
 const currentFolder = ref<string>("");
 const images = ref<string[]>([]);
@@ -18,7 +19,7 @@ const zoomLevel = ref<number>(1);
 const minZoom = 0.2;
 const maxZoom = 5;
 const zoomStep = 0.1;
-const folderTreeRoot = ref<Folder | null>(null); // State for the folder tree
+const folderTreeRoot = ref<models.Folder | null>(null); // Use namespaced type
 const treeError = ref<string>(""); // State for tree loading errors
 
 // Function to get the parent directory path
@@ -96,6 +97,7 @@ async function loadFolderTree(basePath: string) {
     folderTreeRoot.value = null;
     console.log("Loading tree for:", basePath);
     try {
+        // Ensure the return type matches the namespaced type
         folderTreeRoot.value = await ListSubfolders(basePath);
         console.log("Tree loaded:", folderTreeRoot.value);
     } catch (err: any) {
