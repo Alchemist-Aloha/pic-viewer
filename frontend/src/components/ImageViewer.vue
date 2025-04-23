@@ -232,14 +232,26 @@ function zoomOut() {
 }
 
 function handleWheel(event: WheelEvent) {
-  if (!currentImageSrc.value) return; // Don't zoom if no image
-  event.preventDefault();
-  if (event.deltaY < 0) {
-    // Wheel up / Zoom in
-    zoomIn();
-  } else if (event.deltaY > 0) {
-    // Wheel down / Zoom out
-    zoomOut();
+  event.preventDefault(); // Prevent default page scroll
+
+  if (event.ctrlKey) {
+    // Ctrl + Scroll = Zoom
+    if (!currentImageSrc.value) return; // Don't zoom if no image
+    if (event.deltaY < 0) {
+      zoomIn();
+    } else if (event.deltaY > 0) {
+      zoomOut();
+    }
+  } else {
+    // Scroll = Next/Previous Image
+    if (isLoading.value || images.value.length < 2) return; // Don't change image if loading or only one image
+    if (event.deltaY < 0) {
+      // Wheel up
+      prevImage();
+    } else if (event.deltaY > 0) {
+      // Wheel down
+      nextImage();
+    }
   }
 }
 
