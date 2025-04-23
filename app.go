@@ -94,7 +94,7 @@ func (a *App) ListImages(dirPath string) ([]string, error) {
 }
 
 // ReadImage reads an image file (including HDR and RAF) and returns its base64 encoded content
-func (a *App) ReadImage(filePath string) (string, error) {
+func (a *App) ReadImage(filePath string) (encodedImage string, err error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 
 	// Handle RAF files using the local raw package
@@ -102,38 +102,60 @@ func (a *App) ReadImage(filePath string) (string, error) {
 		// Use panic recovery in case raw.ReadRAF panics
 		defer func() {
 			if r := recover(); r != nil {
-				// Log the panic and return an error
+				// Log the panic and set the named return error
 				errMsg := fmt.Sprintf("panic occurred while decoding RAF file %s: %v", filePath, r)
 				runtime.LogError(a.ctx, errMsg)
-				// Consider returning a specific error message or a placeholder
-				// For now, just propagate the panic message as an error
-				// Note: This error won't be returned directly due to defer, need a named return or other mechanism if specific error needed
+				// Set the named error return value
+				encodedImage = ""
+				err = fmt.Errorf(errMsg)
 			}
 		}()
 
-		rafData := raw.ReadRAF(filePath) // This might panic based on the raw.go code
+		// Call the potentially panicking function
+		rafData := raw.ReadRAF(filePath)
+
+		// Check if an error was set by the recover() block above
+		if err != nil {
+			return // Return immediately if panic occurred and err was set
+		}
+
 		if rafData == nil || len(rafData.Jpeg) == 0 {
-			return "", fmt.Errorf("failed to extract JPEG from RAF file %s", filePath)
+			err = fmt.Errorf("failed to extract JPEG from RAF file %s", filePath)
+			return // Return the error
 		}
 		// Encode the extracted JPEG data directly
 		encoded := base64.StdEncoding.EncodeToString(rafData.Jpeg)
-		return fmt.Sprintf("data:image/jpeg;base64,%s", encoded), nil
+		encodedImage = fmt.Sprintf("data:image/jpeg;base64,%s", encoded)
+		return // Return success (encodedImage, nil)
 	}
 
 	// Handle other formats (including HDR) using image.Decode
-	file, err := os.Open(filePath)
+	var file *os.File
+	file, err = os.Open(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open file %s: %w", filePath, err)
+		err = fmt.Errorf("failed to open file %s: %w", filePath, err)
+		return // Return the error
 	}
 	defer file.Close()
 
-	img, formatName, decodeErr := image.Decode(file)
+	var img image.Image
+	var formatName string
+	var decodeErr error
+	img, formatName, decodeErr = image.Decode(file)
 	if decodeErr != nil {
 		// Fallback for formats not handled by image.Decode (e.g., some BMP, WebP)
-		file.Seek(0, 0)
-		data, readErr := os.ReadFile(filePath)
-		if readErr != nil {
-			return "", fmt.Errorf("failed to decode or read file %s: decodeErr=%v, readErr=%w", filePath, decodeErr, readErr)
+		// Need to rewind the file reader
+		_, seekErr := file.Seek(0, 0)
+		if seekErr != nil {
+			err = fmt.Errorf("failed to seek file %s after decode error: %w", filePath, seekErr)
+			return // Return seek error
+		}
+
+		var data []byte
+		data, err = os.ReadFile(filePath) // Use the named err here
+		if err != nil {
+			err = fmt.Errorf("failed to decode or read file %s: decodeErr=%v, readErr=%w", filePath, decodeErr, err)
+			return // Return read error
 		}
 		var mimeType string
 		switch ext {
@@ -148,10 +170,14 @@ func (a *App) ReadImage(filePath string) (string, error) {
 		case ".webp":
 			mimeType = "image/webp"
 		default:
-			mimeType = "application/octet-stream"
+			// Log unsupported format during fallback
+			runtime.LogWarningf(a.ctx, "Unsupported format '%s' encountered during fallback for file %s", ext, filePath)
+			mimeType = "application/octet-stream" // Or return an error?
 		}
 		encoded := base64.StdEncoding.EncodeToString(data)
-		return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded), nil
+		encodedImage = fmt.Sprintf("data:%s;base64,%s", mimeType, encoded)
+		err = nil // Explicitly set err to nil for successful fallback
+		return    // Return success (encodedImage, nil)
 	}
 
 	runtime.LogInfof(a.ctx, "Decoded format: %s for file %s", formatName, filePath)
@@ -160,11 +186,14 @@ func (a *App) ReadImage(filePath string) (string, error) {
 	var buf bytes.Buffer
 	encodeErr := png.Encode(&buf, img)
 	if encodeErr != nil {
-		return "", fmt.Errorf("failed to encode image %s to PNG: %w", filePath, encodeErr)
+		err = fmt.Errorf("failed to encode image %s to PNG: %w", filePath, encodeErr)
+		return // Return encoding error
 	}
 
 	encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
-	return fmt.Sprintf("data:image/png;base64,%s", encoded), nil
+	encodedImage = fmt.Sprintf("data:image/png;base64,%s", encoded)
+	err = nil // Explicitly set err to nil for success
+	return    // Return success (encodedImage, nil)
 }
 
 // Folder represents a directory in the tree view

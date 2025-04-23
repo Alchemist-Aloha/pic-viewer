@@ -20,6 +20,7 @@ const maxZoom = 5;
 const zoomStep = 0.1;
 const folderTreeRoot = ref<models.Folder | null>(null); // Use namespaced type
 const flatFolderList = ref<string[]>([]); // Add state for flattened folder list
+const leafFolderList = ref<string[]>([]); // Add state for leaf folders only
 const treeError = ref<string>(""); // State for tree loading errors
 const preloadedImageSrc = ref<string>(""); // State for preloaded image data
 const preloadedIndex = ref<number>(-1); // State for the index of the preloaded image
@@ -105,6 +106,22 @@ function flattenTree(node: models.Folder | null): string[] {
     return paths;
 }
 
+// Helper function to get only leaf folders (depth-first)
+function getLeafFolders(node: models.Folder | null): string[] {
+    if (!node) return [];
+    let leafPaths: string[] = [];
+    // If a node has no children or an empty children array, it's a leaf
+    if (!node.children || node.children.length === 0) {
+        leafPaths.push(node.path);
+    } else {
+        // Otherwise, recurse into children
+        for (const child of node.children) {
+            leafPaths = leafPaths.concat(getLeafFolders(child));
+        }
+    }
+    return leafPaths;
+}
+
 // Function to load the folder tree structure
 async function loadFolderTree(basePath: string) {
     if (!basePath) return;
@@ -112,14 +129,17 @@ async function loadFolderTree(basePath: string) {
     treeError.value = "";
     folderTreeRoot.value = null;
     flatFolderList.value = []; // Clear the flat list
+    leafFolderList.value = []; // Clear the leaf list
     console.log("Loading tree for:", basePath);
     try {
         // Ensure the return type matches the namespaced type
         const tree = await ListSubfolders(basePath);
         folderTreeRoot.value = tree;
         flatFolderList.value = flattenTree(tree); // Update the flat list
+        leafFolderList.value = getLeafFolders(tree); // Update the leaf list
         console.log("Tree loaded:", folderTreeRoot.value);
         console.log("Flat folder list:", flatFolderList.value);
+        console.log("Leaf folder list:", leafFolderList.value);
     } catch (err: any) {
         LogError("Error loading folder tree: " + err);
         console.error("Error loading folder tree:", err);
@@ -379,22 +399,23 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
-// Function to navigate to a random folder from the flattened list
+// Function to navigate to a random folder from the leaf list
 function goToRandomFolder() {
-  if (flatFolderList.value.length === 0 || isTreeLoading.value) return;
+  // Use leafFolderList instead of flatFolderList
+  if (leafFolderList.value.length === 0 || isTreeLoading.value) return;
 
   let randomIndex;
   let randomFolder;
-  // Ensure we don't pick the current folder if possible
-  if (flatFolderList.value.length > 1) {
+  // Ensure we don't pick the current folder if possible and if there are other options
+  if (leafFolderList.value.length > 1) {
     do {
-      randomIndex = Math.floor(Math.random() * flatFolderList.value.length);
-      randomFolder = flatFolderList.value[randomIndex];
+      randomIndex = Math.floor(Math.random() * leafFolderList.value.length);
+      randomFolder = leafFolderList.value[randomIndex];
     } while (randomFolder === currentFolder.value);
   } else {
-    // Only one folder, just go to it (or stay if it's the current one)
+    // Only one leaf folder, just go to it (or stay if it's the current one)
     randomIndex = 0;
-    randomFolder = flatFolderList.value[randomIndex];
+    randomFolder = leafFolderList.value[randomIndex];
   }
 
   if (randomFolder) {
@@ -475,7 +496,7 @@ onUnmounted(() => {
           <button @click="toggleSlideshow" :disabled="isLoading || images.length < 2">
             {{ slideshowActive ? 'Stop Slideshow' : 'Start Slideshow' }}
           </button>
-          <button @click="goToRandomFolder" :disabled="isTreeLoading || flatFolderList.length === 0" title="Go to a random folder in the tree">
+          <button @click="goToRandomFolder" :disabled="isTreeLoading || leafFolderList.length === 0" title="Go to a random leaf folder in the tree">
             Random Folder
           </button>
         </div>
