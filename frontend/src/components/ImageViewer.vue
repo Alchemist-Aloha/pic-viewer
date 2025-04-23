@@ -43,11 +43,23 @@ function getParentDirectory(path: string): string {
 
 async function selectFolder() {
   treeError.value = "";
+  // Clear previous tree and images immediately for better UX
   folderTreeRoot.value = null;
+  images.value = [];
+  currentIndex.value = -1;
+  currentImageSrc.value = "";
+  currentFolder.value = "";
+  flatFolderList.value = [];
+  isLoading.value = false; // Ensure loading state is reset
+  isTreeLoading.value = false; // Ensure tree loading state is reset
+
   try {
     const selectedPath = await SelectFolder();
     if (selectedPath) {
-      await handleFolderSelected(selectedPath);
+      // When selecting initially, load both images and the tree
+      await loadImagesForPath(selectedPath); // Load images first
+      // Load the tree starting from the selected path itself
+      await loadFolderTree(selectedPath);
     }
   } catch (err) {
     LogError("Error selecting folder: " + err);
@@ -117,43 +129,28 @@ async function loadFolderTree(basePath: string) {
     }
 }
 
-// New function to handle folder selection from both button and tree
+// Modified function to handle folder selection - ONLY loads images now
 async function handleFolderSelected(selectedPath: string) {
     if (!selectedPath) return; // Don't proceed if path is empty
 
-    // Only reload tree if the root is different or not set
-    const parentPath = getParentDirectory(selectedPath);
-    const needsTreeLoad = parentPath && (!folderTreeRoot.value || folderTreeRoot.value.path !== parentPath);
-
-    // Avoid reloading images if the folder is already selected AND the tree doesn't need reloading
-    // This prevents unnecessary reloads when clicking the already selected folder in the tree
-    if (selectedPath === currentFolder.value && !needsTreeLoad) {
-        console.log("Folder already selected and tree is current, skipping reload.");
+    // Avoid reloading images if the folder is already selected
+    if (selectedPath === currentFolder.value) {
+        console.log("Folder already selected, skipping image reload.");
         return;
     }
 
-    // Load images for the selected folder *before* potentially loading the tree
-    // This makes the UI feel more responsive if the tree load is slow
+    // Only load images for the selected folder
     await loadImagesForPath(selectedPath);
 
-    // Load or update the folder tree if necessary
-    if (needsTreeLoad) {
-        await loadFolderTree(parentPath);
-    } else if (!folderTreeRoot.value && parentPath) {
-        // Handle case where a folder was selected but tree wasn't loaded initially
-         await loadFolderTree(parentPath);
-    } else {
-         // Ensure currentFolder is updated even if tree doesn't reload
-         // This might be redundant if loadImagesForPath already sets it, but safe to keep
-         currentFolder.value = selectedPath;
-    }
-    preloadedImageSrc.value = ""; // Clear preload
+    // Clear preload state when changing folders this way too
+    preloadedImageSrc.value = "";
     preloadedIndex.value = -1;
     preloadedFolder.value = "";
 }
 
 // Handler for the event emitted by FolderTree component
 function handleFolderSelectedFromTree(path: string) {
+    // This now calls the simplified handler that only loads images
     handleFolderSelected(path);
 }
 
@@ -382,6 +379,29 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
+// Function to navigate to a random folder from the flattened list
+function goToRandomFolder() {
+  if (flatFolderList.value.length === 0 || isTreeLoading.value) return;
+
+  let randomIndex;
+  let randomFolder;
+  // Ensure we don't pick the current folder if possible
+  if (flatFolderList.value.length > 1) {
+    do {
+      randomIndex = Math.floor(Math.random() * flatFolderList.value.length);
+      randomFolder = flatFolderList.value[randomIndex];
+    } while (randomFolder === currentFolder.value);
+  } else {
+    // Only one folder, just go to it (or stay if it's the current one)
+    randomIndex = 0;
+    randomFolder = flatFolderList.value[randomIndex];
+  }
+
+  if (randomFolder) {
+    handleFolderSelected(randomFolder);
+  }
+}
+
 // Computed style for the image
 const imageStyle = computed<CSSProperties>(() => ({
   transform: `scale(${zoomLevel.value})`,
@@ -448,12 +468,15 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="navigation" v-if="images.length > 0">
+        <div class="navigation" v-if="images.length > 0 || flatFolderList.length > 0">
           <button @click="prevImage" :disabled="isLoading || images.length < 2">Previous</button>
-          <span>{{ currentIndex + 1 }} / {{ images.length }}</span>
+          <span v-if="images.length > 0">{{ currentIndex + 1 }} / {{ images.length }}</span>
           <button @click="nextImage" :disabled="isLoading || images.length < 2">Next</button>
           <button @click="toggleSlideshow" :disabled="isLoading || images.length < 2">
             {{ slideshowActive ? 'Stop Slideshow' : 'Start Slideshow' }}
+          </button>
+          <button @click="goToRandomFolder" :disabled="isTreeLoading || flatFolderList.length === 0" title="Go to a random folder in the tree">
+            Random Folder
           </button>
         </div>
       </div>
@@ -608,7 +631,7 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 15px;
+  gap: 10px; /* Adjusted gap slightly for potentially more buttons */
   flex-shrink: 0; /* Prevent navigation from shrinking */
 }
 
