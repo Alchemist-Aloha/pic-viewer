@@ -39,6 +39,26 @@ const currentFilename = computed(() => {
   return ""; // Return empty string if no image is selected/loaded
 });
 
+// Computed property to check if a subsequent leaf folder exists
+const hasNextLeafFolder = computed(() => {
+    const currentFolderIndexInFlatList = flatFolderList.value.indexOf(currentFolder.value);
+    // If current folder isn't found or flat list is empty, assume no next folder
+    if (currentFolderIndexInFlatList === -1 || flatFolderList.value.length === 0) {
+        return false;
+    }
+
+    // Search for the *next* leaf folder in the flat list
+    for (let i = currentFolderIndexInFlatList + 1; i < flatFolderList.value.length; i++) {
+        const potentialNextFolder = flatFolderList.value[i];
+        if (leafFolderList.value.includes(potentialNextFolder)) {
+            return true; // Found a subsequent leaf folder
+        }
+    }
+
+    // If the loop finishes without finding a next leaf folder
+    return false; // No next leaf folder found
+});
+
 // Function to get the parent directory path
 // Basic implementation, might need refinement for edge cases (root drives)
 function getParentDirectory(path: string): string {
@@ -564,13 +584,21 @@ function handleWheel(event: WheelEvent) {
     }
   } else {
     // Scroll = Next/Previous Image
-    if (isLoading.value || images.value.length < 2) return; // Don't change image if loading or only one image
+
+    // Check for previous image (wheel up)
     if (event.deltaY < 0) {
-      // Wheel up
-      prevImage();
-    } else if (event.deltaY > 0) {
-      // Wheel down
-      nextImage();
+      // Allow previous if not loading and there are images to go back to
+      if (!isLoading.value && images.value.length > 0) {
+         prevImage();
+      }
+    } 
+    // Check for next image (wheel down)
+    else if (event.deltaY > 0) {
+      // Allow next if not loading AND (it's not the last image OR there is a next leaf folder)
+      const isLastImageInCurrentFolder = currentIndex.value >= images.value.length - 1;
+      if (!isLoading.value && (!isLastImageInCurrentFolder || hasNextLeafFolder.value)) {
+         nextImage();
+      }
     }
   }
 }
@@ -747,14 +775,20 @@ onUnmounted(() => {
         <div class="navigation" v-if="images.length > 0 || flatFolderList.length > 0">
           <button @click="prevImage" :disabled="isLoading || images.length < 2">Previous</button>
           <span v-if="images.length > 0">{{ currentIndex + 1 }} / {{ images.length }}</span>
-          <button @click="nextImage" :disabled="isLoading || images.length < 2">Next</button>
+          <!-- MODIFIED :disabled condition for Next button -->
+          <button 
+            @click="nextImage" 
+            :disabled="isLoading || (currentIndex >= images.length - 1 && !hasNextLeafFolder)"
+            title="Go to the next image or next folder">
+            Next
+          </button>
           <button @click="goToLastVisitedFolder" :disabled="isTreeLoading || !lastVisitedFolder" title="Go to the previously visited folder">
             Last Visited
           </button>
           <button @click="goToPrevLeafFolder" :disabled="isTreeLoading || leafFolderList.length < 2" title="Go to the previous leaf folder in the tree">
             Prev Folder
           </button>
-          <button @click="goToNextLeafFolder" :disabled="isTreeLoading || leafFolderList.length < 2" title="Go to the next leaf folder in the tree">
+          <button @click="goToNextLeafFolder" :disabled="isTreeLoading || leafFolderList.length < 2 || !hasNextLeafFolder" title="Go to the next leaf folder in the tree">
             Next Folder
           </button>
           <button @click="goToRandomFolder" :disabled="isTreeLoading || leafFolderList.length === 0" title="Go to a random leaf folder in the tree">
