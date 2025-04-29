@@ -59,6 +59,17 @@ const hasNextLeafFolder = computed(() => {
     return false; // No next leaf folder found
 });
 
+// Computed property to check if a preceding leaf folder exists
+const hasPreviousLeafFolder = computed(() => {
+    const currentFolderIndexInLeafList = leafFolderList.value.indexOf(currentFolder.value);
+    // If current folder isn't found in leaf list, or it's the first one, no previous
+    if (currentFolderIndexInLeafList <= 0) {
+        return false;
+    }
+    // Check if there's actually a folder at the previous index
+    return leafFolderList.value.length > currentFolderIndexInLeafList -1;
+});
+
 // Function to get the parent directory path
 // Basic implementation, might need refinement for edge cases (root drives)
 function getParentDirectory(path: string): string {
@@ -474,9 +485,8 @@ async function nextImage() { // Add async here
   }
 }
 
-function prevImage() {
-  // Previous always works sequentially within the current folder for simplicity
-  if (images.value.length === 0) return;
+async function prevImage() { // Make async
+  if (images.value.length === 0 && !hasPreviousLeafFolder.value) return; // Nothing to navigate back to
 
   // Clear preload when going back manually
   preloadedImageSrc.value = "";
@@ -484,14 +494,46 @@ function prevImage() {
   preloadedFolder.value = "";
 
   let targetIdx = currentIndex.value - 1;
+
   if (targetIdx < 0) {
-      // TODO: Optionally implement moving to the *last* image of the *previous* folder
-      // For now, wrap around within the current folder
-      targetIdx = images.value.length - 1;
+    // Trying to go before the first image
+    if (hasPreviousLeafFolder.value) {
+      // Find the previous leaf folder
+      const currentLeafIndex = leafFolderList.value.indexOf(currentFolder.value);
+      if (currentLeafIndex > 0) {
+        const prevLeafFolderPath = leafFolderList.value[currentLeafIndex - 1];
+        console.log(`Moving to previous leaf folder: ${prevLeafFolderPath}`);
+
+        // Store last visited before changing
+        if (currentFolder.value && currentFolder.value !== prevLeafFolderPath) {
+            lastVisitedFolder.value = currentFolder.value;
+        }
+
+        // Load images for the previous folder
+        await loadImagesForPath(prevLeafFolderPath); // This updates currentFolder
+
+        // After loading, set index to the *last* image
+        if (images.value.length > 0) {
+          currentIndex.value = images.value.length - 1;
+          await displayCurrentImage(); // Display the last image
+        } else {
+          // Previous folder was empty, displayCurrentImage handles this
+          await displayCurrentImage();
+        }
+        return; // Exit prevImage after handling folder change
+      }
+    }
+    // No previous folder, wrap around in the current folder (if it has images)
+    if (images.value.length > 0) {
+        targetIdx = images.value.length - 1;
+    } else {
+        return; // Cannot wrap around in an empty folder
+    }
   }
 
+  // If we didn't change folders or wrapped around
   currentIndex.value = targetIdx;
-  displayCurrentImage(); // This will trigger preload for the *next* image relative to the new current one
+  await displayCurrentImage(); // Display the target image
 }
 
 function startSlideshow() {
@@ -585,14 +627,14 @@ function handleWheel(event: WheelEvent) {
   } else {
     // Scroll = Next/Previous Image
 
-    // Check for previous image (wheel up)
+    // Check for previous image/folder (wheel up)
     if (event.deltaY < 0) {
-      // Allow previous if not loading and there are images to go back to
-      if (!isLoading.value && images.value.length > 0) {
-         prevImage();
+      // Allow previous if not loading AND (not the first image OR there is a previous leaf folder)
+      if (!isLoading.value && (currentIndex.value > 0 || hasPreviousLeafFolder.value)) {
+         prevImage(); // Call the updated prevImage function
       }
-    } 
-    // Check for next image (wheel down)
+    }
+    // Check for next image/folder (wheel down)
     else if (event.deltaY > 0) {
       // Allow next if not loading AND (it's not the last image OR there is a next leaf folder)
       const isLastImageInCurrentFolder = currentIndex.value >= images.value.length - 1;
