@@ -20,6 +20,7 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 
+	"github.com/facette/natsort"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -247,9 +248,9 @@ func (a *App) ListSubfolders(basePath string) (*Folder, error) {
 		}
 	}
 
-	// Sort children alphabetically by name
+	// Sort children alphabetically by name using natural sort
 	sort.Slice(children, func(i, j int) bool {
-		return strings.ToLower(children[i].Name) < strings.ToLower(children[j].Name)
+		return natsort.Compare(strings.ToLower(children[i].Name), strings.ToLower(children[j].Name))
 	})
 
 	root.Children = children

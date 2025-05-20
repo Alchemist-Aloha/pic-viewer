@@ -3,6 +3,7 @@ module pic-viewer
 go 1.23
 
 require (
+	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
 	github.com/wailsapp/wails/v2 v2.10.1
 )
