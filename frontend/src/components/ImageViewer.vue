@@ -815,13 +815,20 @@ onUnmounted(() => {
         </div>
 
         <div class="navigation" v-if="images.length > 0 || flatFolderList.length > 0">
-          <button @click="prevImage" :disabled="isLoading || images.length < 2">Previous</button>
+          <button
+            @click="prevImage"
+            :disabled="isLoading || images.length < 2"
+            title="Previous (Left Arrow)"
+            aria-keyshortcuts="ArrowLeft">
+            Previous
+          </button>
           <span v-if="images.length > 0">{{ currentIndex + 1 }} / {{ images.length }}</span>
           <!-- MODIFIED :disabled condition for Next button -->
           <button 
             @click="nextImage" 
             :disabled="isLoading || (currentIndex >= images.length - 1 && !hasNextLeafFolder)"
-            title="Go to the next image or next folder">
+            title="Next image or folder (Right Arrow)"
+            aria-keyshortcuts="ArrowRight">
             Next
           </button>
           <button @click="goToLastVisitedFolder" :disabled="isTreeLoading || !lastVisitedFolder" title="Go to the previously visited folder">
@@ -839,7 +846,9 @@ onUnmounted(() => {
           <!-- Slideshow Controls -->
           <div class="slideshow-controls">
               <button @click="toggleSlideshow"
-                      :disabled="isLoading || (slideshowMode === 'sequence' && images.length < 1 && flatFolderList.length < 2) || (slideshowMode === 'random-folder' && images.length < 1) || (slideshowMode === 'random-all' && leafFolderList.length < 1)">
+                      :disabled="isLoading || (slideshowMode === 'sequence' && images.length < 1 && flatFolderList.length < 2) || (slideshowMode === 'random-folder' && images.length < 1) || (slideshowMode === 'random-all' && leafFolderList.length < 1)"
+                      title="Toggle slideshow (Space)"
+                      aria-keyshortcuts="Space">
                 {{ slideshowActive ? 'Stop' : 'Start' }}
               </button>
               <select v-model="slideshowMode" :disabled="slideshowActive || isLoading">
