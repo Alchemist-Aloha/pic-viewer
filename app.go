@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"image"
 	"image/png" // Import PNG encoder
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -72,24 +71,24 @@ func (a *App) ListImages(dirPath string) ([]string, error) {
 		".raf": true,
 	}
 
-	// ...existing WalkDir logic...
-	err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() && filepath.Dir(path) == dirPath {
-			ext := strings.ToLower(filepath.Ext(path))
-			if validExtensions[ext] {
-				imageFiles = append(imageFiles, path)
-			}
-		}
-		return nil
-	})
-
-	// ...existing error handling and sorting...
+	// ⚡ Bolt: Use os.ReadDir instead of filepath.WalkDir to only read immediate children.
+	// This avoids an O(N) traversal of all nested subdirectories, massively improving performance
+	// for deep or large directory structures when we only want files in the current folder.
+	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return nil, err
 	}
+
+	for _, d := range entries {
+		if d.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(d.Name()))
+		if validExtensions[ext] {
+			imageFiles = append(imageFiles, filepath.Join(dirPath, d.Name()))
+		}
+	}
+
 	sort.Strings(imageFiles)
 	return imageFiles, nil
 }
