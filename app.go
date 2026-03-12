@@ -1,12 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
-	"image"
-	"image/png" // Import PNG encoder
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,10 +11,6 @@ import (
 
 	// Import local raw package
 	"pic-viewer/raw"
-
-	// Keep other decoders if needed for other formats
-	_ "image/gif"
-	_ "image/jpeg"
 
 	"github.com/facette/natsort"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -107,7 +100,7 @@ func (a *App) ReadImage(filePath string) (encodedImage string, err error) {
 				runtime.LogError(a.ctx, errMsg)
 				// Set the named error return value
 				encodedImage = ""
-				err = fmt.Errorf(errMsg)
+				err = fmt.Errorf("%s", errMsg)
 			}
 		}()
 
@@ -129,71 +122,39 @@ func (a *App) ReadImage(filePath string) (encodedImage string, err error) {
 		return // Return success (encodedImage, nil)
 	}
 
-	// Handle other formats (including HDR) using image.Decode
-	var file *os.File
-	file, err = os.Open(filePath)
+	// Handle other formats
+	// ⚡ Bolt: Read the file directly and base64 encode it instead of
+	// decoding to image.Image and re-encoding to PNG. This massively
+	// reduces memory usage and CPU time, and keeps the payload small.
+	var data []byte
+	data, err = os.ReadFile(filePath)
 	if err != nil {
-		err = fmt.Errorf("failed to open file %s: %w", filePath, err)
-		return // Return the error
-	}
-	defer file.Close()
-
-	var img image.Image
-	var formatName string
-	var decodeErr error
-	img, formatName, decodeErr = image.Decode(file)
-	if decodeErr != nil {
-		// Fallback for formats not handled by image.Decode (e.g., some BMP, WebP)
-		// Need to rewind the file reader
-		_, seekErr := file.Seek(0, 0)
-		if seekErr != nil {
-			err = fmt.Errorf("failed to seek file %s after decode error: %w", filePath, seekErr)
-			return // Return seek error
-		}
-
-		var data []byte
-		data, err = os.ReadFile(filePath) // Use the named err here
-		if err != nil {
-			err = fmt.Errorf("failed to decode or read file %s: decodeErr=%v, readErr=%w", filePath, decodeErr, err)
-			return // Return read error
-		}
-		var mimeType string
-		switch ext {
-		case ".jpg", ".jpeg":
-			mimeType = "image/jpeg"
-		case ".png":
-			mimeType = "image/png"
-		case ".gif":
-			mimeType = "image/gif"
-		case ".bmp":
-			mimeType = "image/bmp"
-		case ".webp":
-			mimeType = "image/webp"
-		default:
-			// Log unsupported format during fallback
-			runtime.LogWarningf(a.ctx, "Unsupported format '%s' encountered during fallback for file %s", ext, filePath)
-			mimeType = "application/octet-stream" // Or return an error?
-		}
-		encoded := base64.StdEncoding.EncodeToString(data)
-		encodedImage = fmt.Sprintf("data:%s;base64,%s", mimeType, encoded)
-		err = nil // Explicitly set err to nil for successful fallback
-		return    // Return success (encodedImage, nil)
+		err = fmt.Errorf("failed to read file %s: %w", filePath, err)
+		return
 	}
 
-	runtime.LogInfof(a.ctx, "Decoded format: %s for file %s", formatName, filePath)
-
-	// Encode successfully decoded images (non-RAF, non-fallback) as PNG
-	var buf bytes.Buffer
-	encodeErr := png.Encode(&buf, img)
-	if encodeErr != nil {
-		err = fmt.Errorf("failed to encode image %s to PNG: %w", filePath, encodeErr)
-		return // Return encoding error
+	var mimeType string
+	switch ext {
+	case ".jpg", ".jpeg":
+		mimeType = "image/jpeg"
+	case ".png":
+		mimeType = "image/png"
+	case ".gif":
+		mimeType = "image/gif"
+	case ".bmp":
+		mimeType = "image/bmp"
+	case ".webp":
+		mimeType = "image/webp"
+	default:
+		// Log unsupported format
+		runtime.LogWarningf(a.ctx, "Unsupported format '%s' encountered for file %s", ext, filePath)
+		mimeType = "application/octet-stream"
 	}
 
-	encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
-	encodedImage = fmt.Sprintf("data:image/png;base64,%s", encoded)
-	err = nil // Explicitly set err to nil for success
-	return    // Return success (encodedImage, nil)
+	encoded := base64.StdEncoding.EncodeToString(data)
+	encodedImage = fmt.Sprintf("data:%s;base64,%s", mimeType, encoded)
+	err = nil
+	return
 }
 
 // Folder represents a directory in the tree view
