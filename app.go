@@ -208,10 +208,25 @@ func (a *App) ListSubfolders(basePath string) (*Folder, error) {
 		}
 	}
 
-	// Sort children alphabetically by name using natural sort
-	sort.Slice(children, func(i, j int) bool {
-		return natsort.Compare(strings.ToLower(children[i].Name), strings.ToLower(children[j].Name))
+	// Sort children alphabetically by name using natural sort.
+	// ⚡ Bolt: Pre-calculate lowercased names to avoid O(N log N) string
+	// allocations and conversions during the sort comparison phase.
+	type sortNode struct {
+		folder *Folder
+		lower  string
+	}
+	nodes := make([]sortNode, len(children))
+	for i, c := range children {
+		nodes[i] = sortNode{folder: c, lower: strings.ToLower(c.Name)}
+	}
+
+	sort.Slice(nodes, func(i, j int) bool {
+		return natsort.Compare(nodes[i].lower, nodes[j].lower)
 	})
+
+	for i, n := range nodes {
+		children[i] = n.folder
+	}
 
 	root.Children = children
 	return root, nil
