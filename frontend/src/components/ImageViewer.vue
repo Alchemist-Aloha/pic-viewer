@@ -139,31 +139,30 @@ async function loadImagesForPath(folderPath: string) {
 }
 
 // Helper function to flatten the tree (depth-first)
-function flattenTree(node: models.Folder | null): string[] {
-    if (!node) return [];
-    let paths: string[] = [node.path];
+function flattenTree(node: models.Folder | null, acc: string[] = []): string[] {
+    if (!node) return acc;
+    acc.push(node.path);
     if (node.children) {
         for (const child of node.children) {
-            paths = paths.concat(flattenTree(child));
+            flattenTree(child, acc);
         }
     }
-    return paths;
+    return acc;
 }
 
 // Helper function to get only leaf folders (depth-first)
-function getLeafFolders(node: models.Folder | null): string[] {
-    if (!node) return [];
-    let leafPaths: string[] = [];
+function getLeafFolders(node: models.Folder | null, acc: string[] = []): string[] {
+    if (!node) return acc;
     // If a node has no children or an empty children array, it's a leaf
     if (!node.children || node.children.length === 0) {
-        leafPaths.push(node.path);
+        acc.push(node.path);
     } else {
         // Otherwise, recurse into children
         for (const child of node.children) {
-            leafPaths = leafPaths.concat(getLeafFolders(child));
+            getLeafFolders(child, acc);
         }
     }
-    return leafPaths;
+    return acc;
 }
 
 // Function to load the folder tree structure
