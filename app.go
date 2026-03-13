@@ -116,9 +116,14 @@ func (a *App) ReadImage(filePath string) (encodedImage string, err error) {
 			err = fmt.Errorf("failed to extract JPEG from RAF file %s", filePath)
 			return // Return the error
 		}
-		// Encode the extracted JPEG data directly
-		encoded := base64.StdEncoding.EncodeToString(rafData.Jpeg)
-		encodedImage = fmt.Sprintf("data:image/jpeg;base64,%s", encoded)
+		// ⚡ Bolt: Encode the extracted JPEG data directly into a pre-allocated buffer
+		// to avoid multiple allocations and string copying for large payloads.
+		prefix := "data:image/jpeg;base64,"
+		encodedLen := base64.StdEncoding.EncodedLen(len(rafData.Jpeg))
+		buf := make([]byte, len(prefix)+encodedLen)
+		copy(buf, prefix)
+		base64.StdEncoding.Encode(buf[len(prefix):], rafData.Jpeg)
+		encodedImage = string(buf)
 		return // Return success (encodedImage, nil)
 	}
 
@@ -151,8 +156,15 @@ func (a *App) ReadImage(filePath string) (encodedImage string, err error) {
 		mimeType = "application/octet-stream"
 	}
 
-	encoded := base64.StdEncoding.EncodeToString(data)
-	encodedImage = fmt.Sprintf("data:%s;base64,%s", mimeType, encoded)
+	// ⚡ Bolt: Encode directly into a pre-allocated buffer instead of using
+	// base64.EncodeToString and fmt.Sprintf. This prevents double allocations
+	// and unnecessary copying of multi-megabyte image payloads.
+	prefix := "data:" + mimeType + ";base64,"
+	encodedLen := base64.StdEncoding.EncodedLen(len(data))
+	buf := make([]byte, len(prefix)+encodedLen)
+	copy(buf, prefix)
+	base64.StdEncoding.Encode(buf[len(prefix):], data)
+	encodedImage = string(buf)
 	err = nil
 	return
 }
