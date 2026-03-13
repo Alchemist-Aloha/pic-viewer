@@ -23,6 +23,7 @@ const zoomStep = 0.1;
 const folderTreeRoot = ref<models.Folder | null>(null); // Use namespaced type
 const flatFolderList = ref<string[]>([]); // Add state for flattened folder list
 const leafFolderList = ref<string[]>([]); // Add state for leaf folders only
+const leafFolderSet = computed(() => new Set(leafFolderList.value)); // O(1) lookup for leaf folders
 const treeError = ref<string>(""); // State for tree loading errors
 const lastVisitedFolder = ref<string>(""); // State for the previously visited folder
 const preloadedImageSrc = ref<string>(""); // State for preloaded image data
@@ -50,7 +51,7 @@ const hasNextLeafFolder = computed(() => {
     // Search for the *next* leaf folder in the flat list
     for (let i = currentFolderIndexInFlatList + 1; i < flatFolderList.value.length; i++) {
         const potentialNextFolder = flatFolderList.value[i];
-        if (leafFolderList.value.includes(potentialNextFolder)) {
+        if (leafFolderSet.value.has(potentialNextFolder)) {
             return true; // Found a subsequent leaf folder
         }
     }
@@ -264,7 +265,7 @@ async function preloadNextImage() {
         // Search for the next leaf folder in the flat list
         for (let i = currentFolderIndexInFlatList + 1; i < flatFolderList.value.length; i++) {
             const potentialNextFolder = flatFolderList.value[i];
-            if (leafFolderList.value.includes(potentialNextFolder)) {
+            if (leafFolderSet.value.has(potentialNextFolder)) {
                 nextFolder = potentialNextFolder;
                 nextLeafFolderFound = true;
                 break; // Found the next leaf folder
@@ -420,7 +421,7 @@ async function nextImage() { // Add async here
         // Search for the next leaf folder in the flat list
         for (let i = currentFolderIndexInFlatList + 1; i < flatFolderList.value.length; i++) {
             const potentialNextFolder = flatFolderList.value[i];
-            if (leafFolderList.value.includes(potentialNextFolder)) {
+            if (leafFolderSet.value.has(potentialNextFolder)) {
                 targetFolder = potentialNextFolder;
                 targetIdx = 0; // Index in the new folder
                 isMovingFolder = true;
