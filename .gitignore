@@ -1,3 +1,30 @@
-build/bin
-node_modules
-frontend/dist
+# Wails Build Artifacts
+build/bin/
+build/windows/*.exe
+build/windows/*.exe.manifest
+build/windows/*.res
+build/windows/installer/*.exe
+
+# Frontend Artifacts
+frontend/dist/
+frontend/node_modules/
+frontend/package-lock.json.md5
+
+# Wails Generated Bindings (Optional: Keep if you want them in source control)
+# frontend/wailsjs/
+
+# Go Artifacts
+*.exe
+*.test
+bin/
+
+# IDEs and OS Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# Environment Variables
+.env
+.env.*.local

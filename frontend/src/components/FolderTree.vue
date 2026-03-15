@@ -1,11 +1,11 @@
 <script lang="ts" setup>
 import { ref, defineProps, defineEmits, computed, watch } from 'vue';
-// Import the main namespace from models
-import { main } from '../../wailsjs/go/models';
+// Import the fs namespace from models
+import { fs as models } from '../../wailsjs/go/models';
 
 const props = defineProps<{
   // Use the namespaced type
-  folder: main.Folder;
+  folder: models.Folder;
   level?: number; // For indentation
   selectedPath?: string | null;
 }>();

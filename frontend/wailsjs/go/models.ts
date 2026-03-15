@@ -1,4 +1,4 @@
-export namespace main {
+export namespace fs {
 	
 	export class Folder {
 	    name: string;
