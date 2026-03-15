@@ -5,3 +5,7 @@
 ## 2024-05-14 - Redundant Image Decoding Anti-Pattern
 **Learning:** Found a major performance anti-pattern where files were being manually decoded into uncompressed memory (`image.Decode`) and then re-encoded to PNG (`png.Encode`) before being sent to the frontend via base64. Because modern browsers natively support rendering image formats like JPG, PNG, and WebP, this decoding/encoding step is a complete waste of CPU cycles and memory, and it makes the final base64 string substantially larger.
 **Action:** When sending common web-supported image files (like .jpg, .png, .webp) to a frontend via base64, directly read the file bytes and encode them, skipping any explicit image decoding/encoding steps in the backend, unless specific image manipulation (resizing, cropping) is strictly required.
+
+## 2026-03-15 - Fast Base64 Image Encoding
+**Learning:** Returning large byte structures like base64-encoded Data URIs using string concatenation (`fmt.Sprintf`) and `EncodeToString` causes high memory allocations and garbage collection pressure because it creates intermediate strings that are immediately discarded.
+**Action:** Pre-calculate the required length, allocate a single `[]byte` slice, copy the prefix into the slice, use `base64.StdEncoding.Encode` to encode directly into the rest of the slice, and finally use `unsafe.String` to convert the buffer into a string to avoid final allocation/copy.
