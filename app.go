@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"unsafe"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -116,9 +117,18 @@ func (a *App) ReadImage(filePath string) (encodedImage string, err error) {
 			err = fmt.Errorf("failed to extract JPEG from RAF file %s", filePath)
 			return // Return the error
 		}
-		// Encode the extracted JPEG data directly
-		encoded := base64.StdEncoding.EncodeToString(rafData.Jpeg)
-		encodedImage = fmt.Sprintf("data:image/jpeg;base64,%s", encoded)
+		// ⚡ Bolt: Fast base64 encoding to data URI without intermediate string allocations.
+		// This single allocation strategy avoids massive GC pressure for large image files.
+		mimeType := "image/jpeg"
+		prefix := "data:" + mimeType + ";base64,"
+		encodedLen := base64.StdEncoding.EncodedLen(len(rafData.Jpeg))
+
+		// Allocate a single byte slice for the entire result
+		buf := make([]byte, len(prefix)+encodedLen)
+		copy(buf, prefix)
+		base64.StdEncoding.Encode(buf[len(prefix):], rafData.Jpeg)
+
+		encodedImage = unsafe.String(unsafe.SliceData(buf), len(buf))
 		return // Return success (encodedImage, nil)
 	}
 
@@ -151,8 +161,16 @@ func (a *App) ReadImage(filePath string) (encodedImage string, err error) {
 		mimeType = "application/octet-stream"
 	}
 
-	encoded := base64.StdEncoding.EncodeToString(data)
-	encodedImage = fmt.Sprintf("data:%s;base64,%s", mimeType, encoded)
+	// ⚡ Bolt: Fast base64 encoding to data URI without intermediate string allocations.
+	prefix := "data:" + mimeType + ";base64,"
+	encodedLen := base64.StdEncoding.EncodedLen(len(data))
+
+	// Allocate a single byte slice for the entire result
+	buf := make([]byte, len(prefix)+encodedLen)
+	copy(buf, prefix)
+	base64.StdEncoding.Encode(buf[len(prefix):], data)
+
+	encodedImage = unsafe.String(unsafe.SliceData(buf), len(buf))
 	err = nil
 	return
 }
