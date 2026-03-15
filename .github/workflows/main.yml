@@ -60,12 +60,12 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Build wails
-        uses: dAppServer/wails-build-action@v2
+        uses: dAppServer/wails-build-action@main
         id: build
         with:
           build-name: ${{ matrix.build.name }}
           build-platform: ${{ matrix.build.platform }}
-          package: true
+          package: false
           go-version: '1.25'
 
       - name: Package Assets
@@ -74,7 +74,11 @@ jobs:
           VERSION="${{ steps.get_version.outputs.version }}"
           PLATFORM="${{ matrix.build.artifact-name }}"
           mkdir -p dist
+          # The action leaves results in build/bin
           cd build/bin
+          
+          # List files for debugging if needed
+          ls -R
           
           for f in *; do
             # Skip already processed or zip files
