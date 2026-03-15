@@ -52,26 +52,29 @@ jobs:
         id: get_version
         shell: bash
         run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          if [[ $VERSION == refs/push/* || $VERSION == refs/heads/* ]]; then VERSION="latest"; fi
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${{ github.ref_name }}"
+          else
+            VERSION="latest"
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Build wails
-        uses: dAppServer/wails-build-action@main
+        uses: dAppServer/wails-build-action@v2
         id: build
         with:
-          # Keep build-name simple to avoid pathing issues on macOS/Windows
           build-name: ${{ matrix.build.name }}
           build-platform: ${{ matrix.build.platform }}
           package: true
           go-version: '1.25'
 
-      - name: Rename and Package Assets
+      - name: Package Assets
         shell: bash
         run: |
-          cd build/bin
           VERSION="${{ steps.get_version.outputs.version }}"
           PLATFORM="${{ matrix.build.artifact-name }}"
+          mkdir -p dist
+          cd build/bin
           
           for f in *; do
             # Skip already processed or zip files
@@ -80,17 +83,20 @@ jobs:
             if [ -d "$f" ]; then
               if [[ "$f" == *.app ]]; then
                 # Standard macOS .app bundle
-                zip -r "${f%.app}-${VERSION}-${PLATFORM}.app.zip" "$f"
+                zip -r "../../dist/${f%.app}-${VERSION}-${PLATFORM}.app.zip" "$f"
+              else
+                # Other directories, zip them
+                zip -r "../../dist/${f}-${VERSION}-${PLATFORM}.zip" "$f"
               fi
             elif [ -f "$f" ]; then
               ext="${f##*.}"
               base="${f%.*}"
               if [ "$ext" = "$f" ]; then
                 # Linux binary (no extension)
-                mv "$f" "${f}-${VERSION}-${PLATFORM}"
+                cp "$f" "../../dist/${f}-${VERSION}-${PLATFORM}"
               else
                 # Windows exe/installer or other extensions
-                mv "$f" "${base}-${VERSION}-${PLATFORM}.${ext}"
+                cp "$f" "../../dist/${base}-${VERSION}-${PLATFORM}.${ext}"
               fi
             fi
           done
@@ -99,7 +105,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.build.artifact-name }}
-          path: build/bin/*
+          path: dist/*
 
   release:
     needs: build
@@ -113,12 +119,16 @@ jobs:
         with:
           path: artifacts
 
+      - name: Flatten Artifacts
+        run: |
+          mkdir -p release_assets
+          find artifacts -type f -exec cp {} release_assets/ \;
+
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          files: |
-            artifacts/**/*
+          files: release_assets/*
           generate_release_notes: true
           draft: false
           prerelease: false
