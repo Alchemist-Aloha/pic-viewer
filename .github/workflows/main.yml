@@ -60,11 +60,46 @@ jobs:
         uses: dAppServer/wails-build-action@main
         id: build
         with:
-          # Using a unique build-name fixes the upload conflict and ensures correct file naming
-          build-name: ${{ matrix.build.name }}-${{ steps.get_version.outputs.version }}-${{ matrix.build.artifact-name }}
+          # Keep build-name simple to avoid pathing issues on macOS/Windows
+          build-name: ${{ matrix.build.name }}
           build-platform: ${{ matrix.build.platform }}
           package: true
           go-version: '1.25'
+
+      - name: Rename and Package Assets
+        shell: bash
+        run: |
+          cd build/bin
+          VERSION="${{ steps.get_version.outputs.version }}"
+          PLATFORM="${{ matrix.build.artifact-name }}"
+          
+          for f in *; do
+            # Skip already processed or zip files
+            if [[ "$f" == *.zip ]]; then continue; fi
+            
+            if [ -d "$f" ]; then
+              if [[ "$f" == *.app ]]; then
+                # Standard macOS .app bundle
+                zip -r "${f%.app}-${VERSION}-${PLATFORM}.app.zip" "$f"
+              fi
+            elif [ -f "$f" ]; then
+              ext="${f##*.}"
+              base="${f%.*}"
+              if [ "$ext" = "$f" ]; then
+                # Linux binary (no extension)
+                mv "$f" "${f}-${VERSION}-${PLATFORM}"
+              else
+                # Windows exe/installer or other extensions
+                mv "$f" "${base}-${VERSION}-${PLATFORM}.${ext}"
+              fi
+            fi
+          done
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.build.artifact-name }}
+          path: build/bin/*
 
   release:
     needs: build
@@ -77,24 +112,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-
-      - name: Prepare Assets
-        shell: bash
-        run: |
-          cd artifacts
-          # Zip any directories (like macOS .app bundles) found within the artifacts
-          for dir in */; do
-            if [ -d "$dir" ]; then
-              cd "$dir"
-              for d in */; do
-                if [ -d "$d" ]; then
-                  zip -r "${d%/}.zip" "$d"
-                  rm -rf "$d"
-                fi
-              done
-              cd ..
-            fi
-          done
 
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
