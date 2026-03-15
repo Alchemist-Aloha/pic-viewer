@@ -26,7 +26,7 @@ jobs:
             artifact-name: 'linux-amd64'
           - name: 'pic-viewer'
             platform:  'linux/arm64'
-            os: 'ubuntu-latest'
+            os: 'ubuntu-24.04-arm64'
             artifact-name: 'linux-arm64'
           - name: 'pic-viewer'
             platform:  'windows/amd64'
@@ -61,24 +61,29 @@ jobs:
         shell: bash
         run: |
           cd build/bin
+          # Get version from tag if it exists, otherwise use 'latest'
+          VERSION=${GITHUB_REF#refs/tags/}
+          if [[ $VERSION == refs/push/* || $VERSION == refs/heads/* ]]; then VERSION="latest"; fi
+          
           for f in *; do
             if [ -d "$f" ]; then
               if [[ "$f" == *.app ]]; then
-                zip -r "${f%.app}-${{ matrix.build.artifact-name }}.app.zip" "$f"
+                zip -r "${f%.app}-${VERSION}-${{ matrix.build.artifact-name }}.app.zip" "$f"
                 rm -rf "$f"
               fi
             elif [ -f "$f" ]; then
+              # Skip already processed files
+              if [[ "$f" == *"-${{ matrix.build.artifact-name }}"* ]]; then continue; fi
+              
               ext="${f##*.}"
               base="${f%.*}"
+              
               if [ "$ext" = "$f" ]; then
                 # No extension (Linux binary)
-                mv "$f" "${f}-${{ matrix.build.artifact-name }}"
+                mv "$f" "${f}-${VERSION}-${{ matrix.build.artifact-name }}"
               else
                 # Has extension (.exe, .deb, etc)
-                # Avoid double naming if it already contains the platform
-                if [[ "$f" != *"${{ matrix.build.artifact-name }}"* ]]; then
-                  mv "$f" "${base}-${{ matrix.build.artifact-name }}.${ext}"
-                fi
+                mv "$f" "${base}-${VERSION}-${{ matrix.build.artifact-name }}.${ext}"
               fi
             fi
           done
