@@ -5,3 +5,7 @@
 ## 2024-05-14 - Redundant Image Decoding Anti-Pattern
 **Learning:** Found a major performance anti-pattern where files were being manually decoded into uncompressed memory (`image.Decode`) and then re-encoded to PNG (`png.Encode`) before being sent to the frontend via base64. Because modern browsers natively support rendering image formats like JPG, PNG, and WebP, this decoding/encoding step is a complete waste of CPU cycles and memory, and it makes the final base64 string substantially larger.
 **Action:** When sending common web-supported image files (like .jpg, .png, .webp) to a frontend via base64, directly read the file bytes and encode them, skipping any explicit image decoding/encoding steps in the backend, unless specific image manipulation (resizing, cropping) is strictly required.
+
+## 2024-06-25 - Array.includes() Performance Bottleneck in Vue Computed/Methods
+**Learning:** Found a major performance bottleneck where `.includes()` was used on large arrays (`leafFolderList`) within loops and frequently called methods/computed properties. In Vue reactivity, operations like this on large reactive arrays block the main thread and cause noticeable lag. A benchmark (`frontend/benchmark.mjs`) showed that `Set.has()` is ~31x faster for directory traversal lookups compared to `Array.includes()`.
+**Action:** Always pre-calculate a `Set` (often using a `computed` property) when doing frequent membership checks (`.includes()`) against a static or slowly-changing collection, especially within loops or reactive getters.
