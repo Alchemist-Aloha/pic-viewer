@@ -96,10 +96,14 @@ jobs:
               ext="${f##*.}"
               base="${f%.*}"
               if [ "$ext" = "$f" ]; then
-                # Linux binary (no extension)
-                cp "$f" "../../dist/${f}-${VERSION}-${PLATFORM}"
+                # No extension — add .exe for Windows, leave bare for Linux
+                if [[ "$PLATFORM" == windows-* ]]; then
+                  cp "$f" "../../dist/${f}-${VERSION}-${PLATFORM}.exe"
+                else
+                  cp "$f" "../../dist/${f}-${VERSION}-${PLATFORM}"
+                fi
               else
-                # Windows exe/installer or other extensions
+                # File already has an extension (e.g. .exe, installer)
                 cp "$f" "../../dist/${base}-${VERSION}-${PLATFORM}.${ext}"
               fi
             fi
