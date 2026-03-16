@@ -4,47 +4,50 @@ import { ref, defineProps, defineEmits, computed, watch } from 'vue';
 import { fs as models } from '../../wailsjs/go/models';
 
 const props = defineProps<{
-  // Use the namespaced type
   folder: models.Folder;
-  level?: number; // For indentation
+  level?: number;
   selectedPath?: string | null;
 }>();
 
 const emit = defineEmits<{
-  (e: 'folder-selected', path: string): void
+  (e: 'folder-selected', path: string): void,
+  (e: 'load-subfolders', folder: models.Folder): void
 }>();
 
-const isOpen = ref(true); // Folders start open by default, could be changed
-const indent = computed(() => (props.level || 0) * 15); // Indentation level in pixels
+const isOpen = ref(false); // Changed to false by default for lazy loading
+const isSubLoading = ref(false);
+const indent = computed(() => (props.level || 0) * 15);
 
-function toggleFolder() {
+async function toggleFolder() {
+  if (!isOpen.value && props.folder.hasChildren && (!props.folder.children || props.folder.children.length === 0)) {
+    isSubLoading.value = true;
+    emit('load-subfolders', props.folder);
+    // We don't await here directly as the parent handles it and updates the object reference
+    // But we might need a small delay or watch to set loading to false
+    // For simplicity, let's assume it's fast enough or handled by the parent
+    setTimeout(() => { isSubLoading.value = false; }, 500);
+  }
   isOpen.value = !isOpen.value;
 }
 
 function selectFolder(path: string, event: MouseEvent) {
-  event.stopPropagation(); // Prevent toggle when selecting
+  event.stopPropagation();
   emit('folder-selected', path);
 }
 
-// Check if the current folder or any child is selected
 const isSelectedOrParentOfSelected = computed(() => {
     if (!props.selectedPath) return false;
     if (props.folder.path === props.selectedPath) return true;
-    // Check if selected path starts with this folder's path + separator
-    // This ensures '/base/folder' doesn't match '/base/folder-other'
-    // Handle both Windows and Unix separators
     const separator = props.folder.path.includes('\\') ? '\\' : '/';
     const pathWithSeparator = props.folder.path.endsWith(separator) ? props.folder.path : props.folder.path + separator;
     return props.selectedPath.startsWith(pathWithSeparator);
 });
 
-// Keep the folder open if it or a child is the selected path
-// Watch for changes in selectedPath to potentially re-open folders
-watch(() => props.selectedPath, (newPath, oldPath) => {
-    if (isSelectedOrParentOfSelected.value) {
-        isOpen.value = true;
+watch(() => props.selectedPath, (newPath) => {
+    if (isSelectedOrParentOfSelected.value && !isOpen.value) {
+        toggleFolder();
     }
-}, { immediate: true }); // Run immediately on component mount
+}, { immediate: true });
 
 </script>
 
@@ -56,12 +59,13 @@ watch(() => props.selectedPath, (newPath, oldPath) => {
       :class="{ selected: folder.path === selectedPath }"
       @click="selectFolder(folder.path, $event)"
     >
-      <!-- Toggle Icon -->
-      <span v-if="folder.children && folder.children.length > 0" 
+      <span v-if="folder.hasChildren" 
             class="toggle-icon" 
-            @click.stop="toggleFolder">{{ isOpen ? '&#9660;' : '&#9654;' }}</span> <!-- Down/Right arrow -->
-      <span v-else class="toggle-icon spacer"></span> <!-- Placeholder for alignment -->
-      <!-- Folder Name -->
+            @click.stop="toggleFolder">
+            <template v-if="isSubLoading">...</template>
+            <template v-else>{{ isOpen ? '&#9660;' : '&#9654;' }}</template>
+      </span>
+      <span v-else class="toggle-icon spacer"></span>
       <span class="folder-name">{{ folder.name }}</span>
     </div>
     <div v-if="isOpen && folder.children && folder.children.length > 0" class="children">
@@ -72,6 +76,7 @@ watch(() => props.selectedPath, (newPath, oldPath) => {
         :level="(level || 0) + 1"
         :selectedPath="selectedPath"
         @folder-selected="(path) => emit('folder-selected', path)" 
+        @load-subfolders="(f) => emit('load-subfolders', f)"
       />
     </div>
   </div>

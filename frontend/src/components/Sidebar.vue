@@ -12,6 +12,7 @@ defineProps<{
 const emit = defineEmits<{
   (e: 'selectFolder'): void;
   (e: 'folderSelected', path: string): void;
+  (e: 'loadSubfolders', folder: models.Folder): void;
 }>();
 </script>
 
@@ -26,7 +27,8 @@ const emit = defineEmits<{
       <FolderTree 
         :folder="folderTreeRoot" 
         :selectedPath="currentFolder"
-        @folder-selected="emit('folderSelected', $event)" />
+        @folder-selected="emit('folderSelected', $event)"
+        @load-subfolders="emit('loadSubfolders', $event)" />
     </div>
     <div v-else class="no-tree">
       Click 'Browse' to select a root folder.

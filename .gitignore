@@ -1,4 +1,5 @@
 # Wails Build Artifacts
+build/
 build/bin/
 build/windows/*.exe
 build/windows/*.exe.manifest
@@ -28,3 +29,5 @@ Thumbs.db
 # Environment Variables
 .env
 .env.*.local
+
+GEMINI.md

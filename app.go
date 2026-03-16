@@ -46,7 +46,22 @@ func (a *App) ReadImage(filePath string) (string, error) {
 	return image.ReadImage(filePath)
 }
 
-// ListSubfolders recursively lists subdirectories for the tree view
-func (a *App) ListSubfolders(basePath string) (*fs.Folder, error) {
+// ListSubfolders lists immediate subdirectories for the tree view (non-recursive)
+func (a *App) ListSubfolders(basePath string) ([]*fs.Folder, error) {
 	return fs.ListSubfolders(basePath)
+}
+
+// GetFolderInfo returns a single Folder struct for the given path
+func (a *App) GetFolderInfo(path string) (*fs.Folder, error) {
+	return fs.GetFolderInfo(path)
+}
+
+// FindNextFolder finds the next folder with images in a DFS traversal
+func (a *App) FindNextFolder(currentPath string, rootPath string) (string, error) {
+	return fs.FindNextFolder(currentPath, rootPath)
+}
+
+// FindPrevFolder finds the previous folder with images in a DFS traversal
+func (a *App) FindPrevFolder(currentPath string, rootPath string) (string, error) {
+	return fs.FindPrevFolder(currentPath, rootPath)
 }

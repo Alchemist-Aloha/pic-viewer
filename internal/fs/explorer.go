@@ -2,7 +2,6 @@ package fs
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,9 +12,11 @@ import (
 
 // Folder represents a directory in the tree view
 type Folder struct {
-	Name     string    `json:"name"`
-	Path     string    `json:"path"`
-	Children []*Folder `json:"children,omitempty"`
+	Name        string    `json:"name"`
+	Path        string    `json:"path"`
+	Children    []*Folder `json:"children,omitempty"`
+	HasChildren bool      `json:"hasChildren"`
+	HasImages   bool      `json:"hasImages"`
 }
 
 var validExtensions = map[string]bool{
@@ -28,71 +29,278 @@ var validExtensions = map[string]bool{
 	".raf":  true,
 }
 
+// HasImages checks if a directory contains any supported image files
+func HasImages(dirPath string) bool {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			ext := strings.ToLower(filepath.Ext(entry.Name()))
+			if validExtensions[ext] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ListImages returns a list of image file paths in a directory
 func ListImages(dirPath string) ([]string, error) {
 	var imageFiles []string
 
-	err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() && filepath.Dir(path) == dirPath {
-			ext := strings.ToLower(filepath.Ext(path))
-			if validExtensions[ext] {
-				imageFiles = append(imageFiles, path)
-			}
-		}
-		return nil
-	})
-
+	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(imageFiles)
+
+	for _, d := range entries {
+		if !d.IsDir() {
+			ext := strings.ToLower(filepath.Ext(d.Name()))
+			if validExtensions[ext] {
+				imageFiles = append(imageFiles, filepath.Join(dirPath, d.Name()))
+			}
+		}
+	}
+
+	sort.Slice(imageFiles, func(i, j int) bool {
+		return natsort.Compare(imageFiles[i], imageFiles[j])
+	})
+
 	return imageFiles, nil
 }
 
-// ListSubfolders recursively lists subdirectories for the tree view
-func ListSubfolders(basePath string) (*Folder, error) {
-	rootInfo, err := os.Stat(basePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to stat base path '%s': %w", basePath, err)
-	}
-	if !rootInfo.IsDir() {
-		return nil, fmt.Errorf("'%s' is not a directory", basePath)
-	}
-
-	root := &Folder{
-		Name: filepath.Base(basePath),
-		Path: basePath,
-	}
-
+// ListSubfolders lists immediate subdirectories for the tree view (non-recursive)
+func ListSubfolders(basePath string) ([]*Folder, error) {
 	entries, err := os.ReadDir(basePath)
 	if err != nil {
-		return root, err // Return the root even if reading contents failed
+		return nil, err
 	}
 
-	var children []*Folder
+	var folders []*Folder
 	for _, entry := range entries {
 		if entry.IsDir() {
 			if strings.HasPrefix(entry.Name(), ".") {
 				continue
 			}
 			childPath := filepath.Join(basePath, entry.Name())
-			childNode, err := ListSubfolders(childPath)
-			if err != nil {
-				continue
+
+			// Check if this child has its own subdirectories
+			hasChildren := false
+			subEntries, _ := os.ReadDir(childPath)
+			hasImages := false
+			for _, subEntry := range subEntries {
+				if subEntry.IsDir() && !strings.HasPrefix(subEntry.Name(), ".") {
+					hasChildren = true
+				} else if !subEntry.IsDir() {
+					ext := strings.ToLower(filepath.Ext(subEntry.Name()))
+					if validExtensions[ext] {
+						hasImages = true
+					}
+				}
+				if hasChildren && hasImages {
+					break
+				}
 			}
-			if childNode != nil {
-				children = append(children, childNode)
-			}
+
+			folders = append(folders, &Folder{
+				Name:        entry.Name(),
+				Path:        childPath,
+				HasChildren: hasChildren,
+				HasImages:   hasImages,
+			})
 		}
 	}
 
-	sort.Slice(children, func(i, j int) bool {
-		return natsort.Compare(strings.ToLower(children[i].Name), strings.ToLower(children[j].Name))
+	sort.Slice(folders, func(i, j int) bool {
+		return natsort.Compare(strings.ToLower(folders[i].Name), strings.ToLower(folders[j].Name))
 	})
 
-	root.Children = children
-	return root, nil
+	return folders, nil
+}
+
+// FindNextFolder finds the next folder with images in a DFS traversal
+func FindNextFolder(currentPath string, rootPath string) (string, error) {
+	// 1. Check subfolders of currentPath
+	next, found := findFirstFolderWithImages(currentPath)
+	if found {
+		return next, nil
+	}
+
+	// 2. Move up and find next sibling
+	curr := currentPath
+	for curr != "" && curr != filepath.Dir(rootPath) && curr != rootPath {
+		parent := filepath.Dir(curr)
+		siblings, err := os.ReadDir(parent)
+		if err != nil {
+			break
+		}
+
+		foundCurr := false
+		for _, sibling := range siblings {
+			if !sibling.IsDir() || strings.HasPrefix(sibling.Name(), ".") {
+				continue
+			}
+			siblingPath := filepath.Join(parent, sibling.Name())
+			if foundCurr {
+				// Search this sibling's subtree
+				if HasImages(siblingPath) {
+					return siblingPath, nil
+				}
+				next, found := findFirstFolderWithImages(siblingPath)
+				if found {
+					return next, nil
+				}
+			}
+			if siblingPath == curr {
+				foundCurr = true
+			}
+		}
+		curr = parent
+		if curr == rootPath {
+			break
+		}
+	}
+
+	return "", nil
+}
+
+// FindPrevFolder finds the previous folder with images in a DFS traversal
+func FindPrevFolder(currentPath string, rootPath string) (string, error) {
+	curr := currentPath
+	for curr != "" && curr != filepath.Dir(rootPath) && curr != rootPath {
+		parent := filepath.Dir(curr)
+		siblings, err := os.ReadDir(parent)
+		if err != nil {
+			break
+		}
+
+		// Find current index
+		currIdx := -1
+		var siblingDirs []string
+		for _, sibling := range siblings {
+			if sibling.IsDir() && !strings.HasPrefix(sibling.Name(), ".") {
+				siblingPath := filepath.Join(parent, sibling.Name())
+				siblingDirs = append(siblingDirs, siblingPath)
+				if siblingPath == curr {
+					currIdx = len(siblingDirs) - 1
+				}
+			}
+		}
+
+		if currIdx > 0 {
+			// Check previous siblings' subtrees from right to left
+			for i := currIdx - 1; i >= 0; i-- {
+				siblingPath := siblingDirs[i]
+				next, found := findLastFolderWithImages(siblingPath)
+				if found {
+					return next, nil
+				}
+				if HasImages(siblingPath) {
+					return siblingPath, nil
+				}
+			}
+		}
+
+		// If we reach the parent, check if the parent has images
+		if HasImages(parent) && parent != filepath.Dir(rootPath) {
+			return parent, nil
+		}
+		curr = parent
+		if curr == rootPath {
+			break
+		}
+	}
+	return "", nil
+}
+
+func findFirstFolderWithImages(path string) (string, bool) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return "", false
+	}
+
+	var subdirs []string
+	for _, entry := range entries {
+		if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
+			subdirs = append(subdirs, filepath.Join(path, entry.Name()))
+		}
+	}
+	sort.Slice(subdirs, func(i, j int) bool {
+		return natsort.Compare(strings.ToLower(subdirs[i]), strings.ToLower(subdirs[j]))
+	})
+
+	for _, subdir := range subdirs {
+		if HasImages(subdir) {
+			return subdir, true
+		}
+		if res, found := findFirstFolderWithImages(subdir); found {
+			return res, true
+		}
+	}
+	return "", false
+}
+
+func findLastFolderWithImages(path string) (string, bool) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return "", false
+	}
+
+	var subdirs []string
+	for _, entry := range entries {
+		if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
+			subdirs = append(subdirs, filepath.Join(path, entry.Name()))
+		}
+	}
+	sort.Slice(subdirs, func(i, j int) bool {
+		return natsort.Compare(strings.ToLower(subdirs[i]), strings.ToLower(subdirs[j]))
+	})
+
+	for i := len(subdirs) - 1; i >= 0; i-- {
+		subdir := subdirs[i]
+		if res, found := findLastFolderWithImages(subdir); found {
+			return res, true
+		}
+		if HasImages(subdir) {
+			return subdir, true
+		}
+	}
+	return "", false
+}
+
+// GetFolderInfo returns a single Folder struct for the given path
+func GetFolderInfo(path string) (*Folder, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("not a directory")
+	}
+
+	hasChildren := false
+	hasImages := false
+	entries, _ := os.ReadDir(path)
+	for _, entry := range entries {
+		if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
+			hasChildren = true
+		} else if !entry.IsDir() {
+			ext := strings.ToLower(filepath.Ext(entry.Name()))
+			if validExtensions[ext] {
+				hasImages = true
+			}
+		}
+		if hasChildren && hasImages {
+			break
+		}
+	}
+
+	return &Folder{
+		Name:        filepath.Base(path),
+		Path:        path,
+		HasChildren: hasChildren,
+		HasImages:   hasImages,
+	}, nil
 }

@@ -4,6 +4,8 @@ export namespace fs {
 	    name: string;
 	    path: string;
 	    children?: Folder[];
+	    hasChildren: boolean;
+	    hasImages: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Folder(source);
@@ -14,6 +16,8 @@ export namespace fs {
 	        this.name = source["name"];
 	        this.path = source["path"];
 	        this.children = this.convertValues(source["children"], Folder);
+	        this.hasChildren = source["hasChildren"];
+	        this.hasImages = source["hasImages"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

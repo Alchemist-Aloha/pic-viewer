@@ -1,11 +1,10 @@
 import { ref, computed, Ref } from 'vue';
-import { ListImages, ReadImage } from '../../wailsjs/go/main/App';
+import { ListImages, ReadImage, FindNextFolder, FindPrevFolder } from '../../wailsjs/go/main/App';
 import { LogError } from '../../wailsjs/runtime/runtime';
 
 export function useImageGallery(
   currentFolder: Ref<string>,
-  flatFolderList: Ref<string[]>,
-  leafFolderList: Ref<string[]>
+  rootPath: Ref<string>
 ) {
   const images = ref<string[]>([]);
   const currentIndex = ref<number>(-1);
@@ -23,24 +22,24 @@ export function useImageGallery(
     return "";
   });
 
-  const hasNextLeafFolder = computed(() => {
-    const currentFolderIndexInFlatList = flatFolderList.value.indexOf(currentFolder.value);
-    if (currentFolderIndexInFlatList === -1 || flatFolderList.value.length === 0) {
-      return false;
-    }
-    for (let i = currentFolderIndexInFlatList + 1; i < flatFolderList.value.length; i++) {
-      const potentialNextFolder = flatFolderList.value[i];
-      if (leafFolderList.value.includes(potentialNextFolder)) {
-        return true;
-      }
-    }
-    return false;
-  });
+  const hasNextLeafFolder = ref(false);
+  const hasPreviousLeafFolder = ref(false);
 
-  const hasPreviousLeafFolder = computed(() => {
-    const currentFolderIndexInLeafList = leafFolderList.value.indexOf(currentFolder.value);
-    return currentFolderIndexInLeafList > 0;
-  });
+  async function updateNavigationAvailability() {
+    if (!currentFolder.value || !rootPath.value) {
+        hasNextLeafFolder.value = false;
+        hasPreviousLeafFolder.value = false;
+        return;
+    }
+    try {
+        const next = await FindNextFolder(currentFolder.value, rootPath.value);
+        hasNextLeafFolder.value = !!next;
+        const prev = await FindPrevFolder(currentFolder.value, rootPath.value);
+        hasPreviousLeafFolder.value = !!prev;
+    } catch (err) {
+        LogError("Error updating nav availability: " + err);
+    }
+  }
 
   async function preloadNextImage(slideshowActive: boolean, slideshowMode: string) {
     if (slideshowActive && slideshowMode !== 'sequence') {
@@ -49,41 +48,28 @@ export function useImageGallery(
     }
     clearPreload();
 
-    if (images.value.length < 1 && flatFolderList.value.length < 1) return;
+    if (images.value.length < 1 && !hasNextLeafFolder.value) return;
 
     let nextIdx = currentIndex.value + 1;
     let nextFolder = currentFolder.value;
     let nextImagePath = "";
 
-    if (images.value.length === 0 || nextIdx >= images.value.length) {
-      const currentFolderIndexInFlatList = flatFolderList.value.indexOf(currentFolder.value);
-      let nextLeafFolderFound = false;
-
-      if (currentFolderIndexInFlatList !== -1) {
-        for (let i = currentFolderIndexInFlatList + 1; i < flatFolderList.value.length; i++) {
-          const potentialNextFolder = flatFolderList.value[i];
-          if (leafFolderList.value.includes(potentialNextFolder)) {
-            nextFolder = potentialNextFolder;
-            nextLeafFolderFound = true;
-            break;
-          }
+    if (nextIdx >= images.value.length) {
+        try {
+            const nextFolderRes = await FindNextFolder(currentFolder.value, rootPath.value);
+            if (!nextFolderRes) return;
+            nextFolder = nextFolderRes;
+            const nextFolderImages = await ListImages(nextFolder);
+            if (nextFolderImages.length > 0) {
+              nextImagePath = nextFolderImages[0];
+              nextIdx = 0;
+            } else {
+              return;
+            }
+        } catch (err) {
+            LogError("Error preloading next folder: " + err);
+            return;
         }
-      }
-
-      if (!nextLeafFolderFound) return;
-
-      try {
-        const nextFolderImages = await ListImages(nextFolder);
-        if (nextFolderImages.length > 0) {
-          nextImagePath = nextFolderImages[0];
-          nextIdx = 0;
-        } else {
-          return;
-        }
-      } catch (err) {
-        LogError(`Error listing images in next leaf folder ${nextFolder} for preload: ${err}`);
-        return;
-      }
     } else {
       nextImagePath = images.value[nextIdx];
     }
@@ -135,6 +121,7 @@ export function useImageGallery(
       images.value = await ListImages(folderPath);
       currentIndex.value = images.value.length > 0 ? 0 : -1;
       await displayCurrentImage(onImageLoad);
+      await updateNavigationAvailability();
       if (currentIndex.value !== -1) {
         preloadNextImage(false, 'sequence');
       }
@@ -163,5 +150,6 @@ export function useImageGallery(
     clearPreload,
     displayCurrentImage,
     loadImagesForPath,
+    updateNavigationAvailability
   };
 }

@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, onMounted, onUnmounted } from 'vue';
-import { SelectFolder, ListImages, ReadImage } from '../../wailsjs/go/main/App';
+import { SelectFolder, ListImages, ReadImage, FindNextFolder, FindPrevFolder } from '../../wailsjs/go/main/App';
 import { LogError } from '../../wailsjs/runtime/runtime';
 
 import Sidebar from './Sidebar.vue';
@@ -14,6 +14,7 @@ import { useImageGallery } from '../composables/useImageGallery';
 import { useSlideshow, SlideshowMode } from '../composables/useSlideshow';
 
 const currentFolder = ref<string>("");
+const rootPath = ref<string>("");
 const lastVisitedFolder = ref<string>("");
 
 const { 
@@ -21,30 +22,29 @@ const {
 } = useImageZoom();
 
 const { 
-  folderTreeRoot, flatFolderList, leafFolderList, isTreeLoading, treeError, 
-  loadFolderTree, clearTree 
+  folderTreeRoot, isTreeLoading, treeError, 
+  loadFolderTree, loadSubfolders, clearTree 
 } = useFolderTree();
 
 const { 
   images, currentIndex, currentImageSrc, isLoading, currentFilename, 
   hasNextLeafFolder, hasPreviousLeafFolder, preloadedImageSrc, preloadedIndex, 
   preloadedFolder, preloadNextImage, clearPreload, displayCurrentImage, loadImagesForPath 
-} = useImageGallery(currentFolder, flatFolderList, leafFolderList);
+} = useImageGallery(currentFolder, rootPath);
 
 const { 
   slideshowActive, slideshowDelay, slideshowMode, toggleSlideshow, stopSlideshow 
 } = useSlideshow(
   nextImage,
   displayRandomImageInFolder,
-  displayRandomImageInAllFolders,
+  async () => {}, // displayRandomImageInAllFolders disabled, made async for TS
   canStartSlideshow
 );
 
 function canStartSlideshow(mode: SlideshowMode): boolean {
-  if (mode === 'sequence' && images.value.length < 1 && flatFolderList.value.length < 2) return false;
-  if (mode === 'random-folder' && images.value.length < 1) return false;
-  if (mode === 'random-all' && leafFolderList.value.length < 1) return false;
-  return true;
+  if (mode === 'sequence' && (images.value.length > 0 || hasNextLeafFolder.value)) return true;
+  if (mode === 'random-folder' && images.value.length > 0) return true;
+  return false;
 }
 
 async function selectFolder() {
@@ -53,11 +53,15 @@ async function selectFolder() {
   currentIndex.value = -1;
   currentImageSrc.value = "";
   currentFolder.value = "";
+  rootPath.value = "";
 
   try {
     const selectedPath = await SelectFolder();
     if (selectedPath) {
+      rootPath.value = selectedPath;
+      // Load images for the root folder itself
       await loadImagesForPath(selectedPath, resetZoom);
+      // Load only immediate children for the tree
       await loadFolderTree(selectedPath);
     }
   } catch (err) {
@@ -73,6 +77,10 @@ async function handleFolderSelected(selectedPath: string) {
   }
 
   await loadImagesForPath(selectedPath, resetZoom);
+}
+
+function handleLoadSubfolders(folder: any) {
+    loadSubfolders(folder);
 }
 
 function goToLastVisitedFolder() {
@@ -93,66 +101,27 @@ function displayRandomImageInFolder() {
   displayCurrentImage(resetZoom);
 }
 
-async function displayRandomImageInAllFolders() {
-  if (leafFolderList.value.length === 0) return;
-  try {
-    const randomFolderPath = leafFolderList.value[Math.floor(Math.random() * leafFolderList.value.length)];
-    const randomFolderImages = await ListImages(randomFolderPath);
-
-    if (randomFolderImages.length > 0) {
-      const randomImageIndex = Math.floor(Math.random() * randomFolderImages.length);
-      currentFolder.value = randomFolderPath;
-      images.value = randomFolderImages;
-      currentIndex.value = randomImageIndex;
-      currentImageSrc.value = await ReadImage(randomFolderImages[randomImageIndex]);
-      resetZoom();
-    }
-  } catch (err) {
-    LogError(`Error during random-all slideshow: ${err}`);
-  }
-}
-
 async function nextImage() {
-  if (images.value.length === 0 && flatFolderList.value.length === 0) return;
+  if (images.value.length === 0 && !hasNextLeafFolder.value) return;
 
   let targetIdx = currentIndex.value + 1;
-  let targetFolder = currentFolder.value;
-  let isMovingFolder = false;
-
-  if (images.value.length === 0 || targetIdx >= images.value.length) {
-    const currentFolderIndexInFlatList = flatFolderList.value.indexOf(currentFolder.value);
-    let nextLeafFolderFound = false;
-
-    if (currentFolderIndexInFlatList !== -1) {
-      for (let i = currentFolderIndexInFlatList + 1; i < flatFolderList.value.length; i++) {
-        const potentialNextFolder = flatFolderList.value[i];
-        if (leafFolderList.value.includes(potentialNextFolder)) {
-          targetFolder = potentialNextFolder;
-          targetIdx = 0;
-          isMovingFolder = true;
-          nextLeafFolderFound = true;
-          break;
-        }
+  
+  if (targetIdx >= images.value.length) {
+      // Try to go to next folder
+      try {
+          const nextFolder = await FindNextFolder(currentFolder.value, rootPath.value);
+          if (nextFolder) {
+              await handleFolderSelected(nextFolder);
+              return;
+          }
+      } catch (err) {
+          LogError("Error finding next folder: " + err);
       }
-    }
-
-    if (!nextLeafFolderFound) {
       stopSlideshow();
       return;
-    }
   }
 
-  if (isMovingFolder && targetFolder === preloadedFolder.value && targetIdx === preloadedIndex.value && preloadedImageSrc.value) {
-    currentImageSrc.value = preloadedImageSrc.value;
-    currentFolder.value = targetFolder;
-    images.value = await ListImages(targetFolder);
-    currentIndex.value = targetIdx;
-    resetZoom();
-    clearPreload();
-    preloadNextImage(slideshowActive.value, slideshowMode.value);
-  } else if (isMovingFolder) {
-    await handleFolderSelected(targetFolder);
-  } else if (!isMovingFolder && slideshowMode.value === 'sequence' && targetIdx === preloadedIndex.value && targetFolder === preloadedFolder.value && preloadedImageSrc.value) {
+  if (slideshowMode.value === 'sequence' && targetIdx === preloadedIndex.value && currentFolder.value === preloadedFolder.value && preloadedImageSrc.value) {
     currentImageSrc.value = preloadedImageSrc.value;
     currentIndex.value = targetIdx;
     resetZoom();
@@ -172,21 +141,21 @@ async function prevImage() {
   let targetIdx = currentIndex.value - 1;
 
   if (targetIdx < 0) {
-    const currentLeafIndex = leafFolderList.value.indexOf(currentFolder.value);
-    if (currentLeafIndex > 0) {
-      const prevLeafFolderPath = leafFolderList.value[currentLeafIndex - 1];
-      await loadImagesForPath(prevLeafFolderPath, resetZoom);
-      if (images.value.length > 0) {
-        currentIndex.value = images.value.length - 1;
-        await displayCurrentImage(resetZoom);
+      try {
+          const prevFolder = await FindPrevFolder(currentFolder.value, rootPath.value);
+          if (prevFolder) {
+              await handleFolderSelected(prevFolder);
+              // Set to last image of prev folder
+              if (images.value.length > 0) {
+                  currentIndex.value = images.value.length - 1;
+                  await displayCurrentImage(resetZoom);
+              }
+              return;
+          }
+      } catch (err) {
+          LogError("Error finding prev folder: " + err);
       }
       return;
-    }
-    if (images.value.length > 0) {
-      targetIdx = images.value.length - 1;
-    } else {
-      return;
-    }
   }
 
   currentIndex.value = targetIdx;
@@ -218,33 +187,25 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 function goToRandomFolder() {
-  if (leafFolderList.value.length === 0 || isTreeLoading.value) return;
-  let randomFolder;
-  if (leafFolderList.value.length > 1) {
-    do {
-      randomFolder = leafFolderList.value[Math.floor(Math.random() * leafFolderList.value.length)];
-    } while (randomFolder === currentFolder.value);
-  } else {
-    randomFolder = leafFolderList.value[0];
-  }
-  if (randomFolder) handleFolderSelected(randomFolder);
+    // Random across all folders is still tricky without a flat list
+    // Could implement a backend GetRandomFolderWithImages
 }
 
-function goToNextLeafFolder() {
-  const idx = leafFolderList.value.indexOf(currentFolder.value);
-  if (idx !== -1 && idx + 1 < leafFolderList.value.length) {
-    handleFolderSelected(leafFolderList.value[idx + 1]);
-  } else if (idx === -1 && leafFolderList.value.length > 0) {
-    handleFolderSelected(leafFolderList.value[0]);
+async function goToNextLeafFolder() {
+  try {
+      const next = await FindNextFolder(currentFolder.value, rootPath.value);
+      if (next) handleFolderSelected(next);
+  } catch (err) {
+      LogError("Error going to next folder: " + err);
   }
 }
 
-function goToPrevLeafFolder() {
-  const idx = leafFolderList.value.indexOf(currentFolder.value);
-  if (idx > 0) {
-    handleFolderSelected(leafFolderList.value[idx - 1]);
-  } else if (idx === -1 && leafFolderList.value.length > 0) {
-    handleFolderSelected(leafFolderList.value[leafFolderList.value.length - 1]);
+async function goToPrevLeafFolder() {
+  try {
+      const prev = await FindPrevFolder(currentFolder.value, rootPath.value);
+      if (prev) handleFolderSelected(prev);
+  } catch (err) {
+      LogError("Error going to prev folder: " + err);
   }
 }
 
@@ -267,6 +228,7 @@ onUnmounted(() => {
       :currentFolder="currentFolder"
       @selectFolder="selectFolder"
       @folderSelected="handleFolderSelected"
+      @loadSubfolders="handleLoadSubfolders"
     />
 
     <div class="main-content">
@@ -279,7 +241,7 @@ onUnmounted(() => {
           :slideshowActive="slideshowActive"
           :isLoading="isLoading"
           :hasImages="images.length > 0"
-          :hasLeafFolders="leafFolderList.length > 0"
+          :hasLeafFolders="false"
           @toggleSlideshow="toggleSlideshow"
         />
 
@@ -298,8 +260,8 @@ onUnmounted(() => {
           :isLoading="isLoading"
           :isTreeLoading="isTreeLoading"
           :lastVisitedFolder="lastVisitedFolder"
-          :leafFolderListLength="leafFolderList.length"
-          :hasNextLeafFolder="hasNextLeafFolder"
+          :leafFolderListLength="0"
+          :hasNextLeafFolder="false"
           @prevImage="prevImage"
           @nextImage="nextImage"
           @goToLastVisitedFolder="goToLastVisitedFolder"
