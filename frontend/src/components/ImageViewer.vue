@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, onMounted, onUnmounted } from 'vue';
-import { SelectFolder, ListImages, ReadImage, FindNextFolder, FindPrevFolder } from '../../wailsjs/go/main/App';
+import { SelectFolder, ListImages, ReadImage, FindNextFolder, FindPrevFolder, FindRandomFolderWithImages } from '../../wailsjs/go/main/App';
 import { LogError } from '../../wailsjs/runtime/runtime';
 
 import Sidebar from './Sidebar.vue';
@@ -186,9 +186,14 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
-function goToRandomFolder() {
-    // Random across all folders is still tricky without a flat list
-    // Could implement a backend GetRandomFolderWithImages
+async function goToRandomFolder() {
+  if (!rootPath.value) return;
+  try {
+    const randomFolder = await FindRandomFolderWithImages(rootPath.value);
+    if (randomFolder) handleFolderSelected(randomFolder);
+  } catch (err) {
+    LogError("Error going to random folder: " + err);
+  }
 }
 
 async function goToNextLeafFolder() {
@@ -260,8 +265,9 @@ onUnmounted(() => {
           :isLoading="isLoading"
           :isTreeLoading="isTreeLoading"
           :lastVisitedFolder="lastVisitedFolder"
-          :leafFolderListLength="0"
-          :hasNextLeafFolder="false"
+          :hasNextLeafFolder="hasNextLeafFolder"
+          :hasPreviousLeafFolder="hasPreviousLeafFolder"
+          :rootPath="rootPath"
           @prevImage="prevImage"
           @nextImage="nextImage"
           @goToLastVisitedFolder="goToLastVisitedFolder"

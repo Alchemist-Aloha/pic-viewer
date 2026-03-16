@@ -65,3 +65,8 @@ func (a *App) FindNextFolder(currentPath string, rootPath string) (string, error
 func (a *App) FindPrevFolder(currentPath string, rootPath string) (string, error) {
 	return fs.FindPrevFolder(currentPath, rootPath)
 }
+
+// FindRandomFolderWithImages finds a random folder containing images under rootPath
+func (a *App) FindRandomFolderWithImages(rootPath string) (string, error) {
+	return fs.FindRandomFolderWithImages(rootPath)
+}

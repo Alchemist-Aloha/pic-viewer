@@ -10,6 +10,10 @@ export function FindPrevFolder(arg1, arg2) {
   return window['go']['main']['App']['FindPrevFolder'](arg1, arg2);
 }
 
+export function FindRandomFolderWithImages(arg1) {
+  return window['go']['main']['App']['FindRandomFolderWithImages'](arg1);
+}
+
 export function GetFolderInfo(arg1) {
   return window['go']['main']['App']['GetFolderInfo'](arg1);
 }

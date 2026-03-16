@@ -5,8 +5,9 @@ defineProps<{
   isLoading: boolean;
   isTreeLoading: boolean;
   lastVisitedFolder: string;
-  leafFolderListLength: number;
   hasNextLeafFolder: boolean;
+  hasPreviousLeafFolder: boolean;
+  rootPath: string;
 }>();
 
 const emit = defineEmits<{
@@ -20,8 +21,8 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="navigation" v-if="totalImages > 0 || leafFolderListLength > 0">
-    <button @click="emit('prevImage')" :disabled="isLoading || totalImages < 2">Previous</button>
+  <div class="navigation" v-if="totalImages > 0 || hasNextLeafFolder || hasPreviousLeafFolder">
+    <button @click="emit('prevImage')" :disabled="isLoading || (currentIndex <= 0 && !hasPreviousLeafFolder)">Previous</button>
     <span v-if="totalImages > 0">{{ currentIndex + 1 }} / {{ totalImages }}</span>
     <button 
       @click="emit('nextImage')" 
@@ -32,13 +33,13 @@ const emit = defineEmits<{
     <button @click="emit('goToLastVisitedFolder')" :disabled="isTreeLoading || !lastVisitedFolder" title="Go to the previously visited folder">
       Last Visited
     </button>
-    <button @click="emit('goToPrevLeafFolder')" :disabled="isTreeLoading || leafFolderListLength < 2" title="Go to the previous leaf folder in the tree">
+    <button @click="emit('goToPrevLeafFolder')" :disabled="isTreeLoading || !hasPreviousLeafFolder" title="Go to the previous leaf folder in the tree">
       Prev Folder
     </button>
-    <button @click="emit('goToNextLeafFolder')" :disabled="isTreeLoading || leafFolderListLength < 2 || !hasNextLeafFolder" title="Go to the next leaf folder in the tree">
+    <button @click="emit('goToNextLeafFolder')" :disabled="isTreeLoading || !hasNextLeafFolder" title="Go to the next leaf folder in the tree">
       Next Folder
     </button>
-    <button @click="emit('goToRandomFolder')" :disabled="isTreeLoading || leafFolderListLength === 0" title="Go to a random leaf folder in the tree">
+    <button @click="emit('goToRandomFolder')" :disabled="isTreeLoading || !rootPath" title="Go to a random folder with images">
       Random Folder
     </button>
   </div>

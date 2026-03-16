@@ -2,10 +2,12 @@ package fs
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/facette/natsort"
 )
@@ -303,4 +305,37 @@ func GetFolderInfo(path string) (*Folder, error) {
 		HasChildren: hasChildren,
 		HasImages:   hasImages,
 	}, nil
+}
+
+// FindRandomFolderWithImages finds a random folder containing images under rootPath
+func FindRandomFolderWithImages(rootPath string) (string, error) {
+	var foldersWithImages []string
+
+	err := filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			// Skip hidden directories but don't skip the root itself if it's "hidden" (though root usually isn't)
+			if strings.HasPrefix(d.Name(), ".") && path != rootPath {
+				return filepath.SkipDir
+			}
+			if HasImages(path) {
+				foldersWithImages = append(foldersWithImages, path)
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	if len(foldersWithImages) == 0 {
+		return "", nil
+	}
+
+	// Seed random for each call to ensure variety
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	return foldersWithImages[r.Intn(len(foldersWithImages))], nil
 }

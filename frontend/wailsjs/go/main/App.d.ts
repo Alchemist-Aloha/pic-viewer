@@ -6,6 +6,8 @@ export function FindNextFolder(arg1:string,arg2:string):Promise<string>;
 
 export function FindPrevFolder(arg1:string,arg2:string):Promise<string>;
 
+export function FindRandomFolderWithImages(arg1:string):Promise<string>;
+
 export function GetFolderInfo(arg1:string):Promise<fs.Folder>;
 
 export function ListImages(arg1:string):Promise<Array<string>>;
