@@ -70,3 +70,8 @@ func (a *App) FindPrevFolder(currentPath string, rootPath string) (string, error
 func (a *App) FindRandomFolderWithImages(rootPath string) (string, error) {
 	return fs.FindRandomFolderWithImages(rootPath)
 }
+
+// FindFirstFolderWithImages returns the first folder in DFS order that contains images (including rootPath itself)
+func (a *App) FindFirstFolderWithImages(rootPath string) (string, error) {
+	return fs.FindFirstFolderWithImages(rootPath)
+}

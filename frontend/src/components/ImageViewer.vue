@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, onMounted, onUnmounted } from 'vue';
-import { SelectFolder, ListImages, ReadImage, FindNextFolder, FindPrevFolder, FindRandomFolderWithImages } from '../../wailsjs/go/main/App';
+import { SelectFolder, ListImages, ReadImage, FindNextFolder, FindPrevFolder, FindRandomFolderWithImages, FindFirstFolderWithImages } from '../../wailsjs/go/main/App';
 import { LogError } from '../../wailsjs/runtime/runtime';
 
 import Sidebar from './Sidebar.vue';
@@ -59,9 +59,17 @@ async function selectFolder() {
     const selectedPath = await SelectFolder();
     if (selectedPath) {
       rootPath.value = selectedPath;
-      // Load images for the root folder itself
-      await loadImagesForPath(selectedPath, resetZoom);
-      // Load only immediate children for the tree
+      
+      // Find the first folder in DFS order that actually contains images
+      const firstFolder = await FindFirstFolderWithImages(selectedPath);
+      if (firstFolder) {
+          await handleFolderSelected(firstFolder);
+      } else {
+          // Fallback if no images found at all
+          await loadImagesForPath(selectedPath, resetZoom);
+      }
+      
+      // Load the tree structure for the sidebar
       await loadFolderTree(selectedPath);
     }
   } catch (err) {

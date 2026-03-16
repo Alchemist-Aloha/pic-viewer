@@ -339,3 +339,15 @@ func FindRandomFolderWithImages(rootPath string) (string, error) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	return foldersWithImages[r.Intn(len(foldersWithImages))], nil
 }
+
+// FindFirstFolderWithImages returns the first folder in DFS order that contains images (including rootPath itself)
+func FindFirstFolderWithImages(rootPath string) (string, error) {
+	if HasImages(rootPath) {
+		return rootPath, nil
+	}
+	next, found := findFirstFolderWithImages(rootPath)
+	if found {
+		return next, nil
+	}
+	return rootPath, nil
+}
