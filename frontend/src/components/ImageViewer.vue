@@ -21,7 +21,7 @@ const {
 } = useImageZoom();
 
 const { 
-  folderTreeRoot, flatFolderList, leafFolderList, isTreeLoading, treeError, 
+  folderTreeRoot, flatFolderList, leafFolderList, leafFolderSet, flatFolderIndexMap, leafFolderIndexMap, isTreeLoading, treeError,
   loadFolderTree, clearTree 
 } = useFolderTree();
 
@@ -29,7 +29,7 @@ const {
   images, currentIndex, currentImageSrc, isLoading, currentFilename, 
   hasNextLeafFolder, hasPreviousLeafFolder, preloadedImageSrc, preloadedIndex, 
   preloadedFolder, preloadNextImage, clearPreload, displayCurrentImage, loadImagesForPath 
-} = useImageGallery(currentFolder, flatFolderList, leafFolderList);
+} = useImageGallery(currentFolder, flatFolderList, leafFolderList, leafFolderSet, flatFolderIndexMap, leafFolderIndexMap);
 
 const { 
   slideshowActive, slideshowDelay, slideshowMode, toggleSlideshow, stopSlideshow 
@@ -120,13 +120,13 @@ async function nextImage() {
   let isMovingFolder = false;
 
   if (images.value.length === 0 || targetIdx >= images.value.length) {
-    const currentFolderIndexInFlatList = flatFolderList.value.indexOf(currentFolder.value);
+    const currentFolderIndexInFlatList = flatFolderIndexMap.value.get(currentFolder.value) ?? -1;
     let nextLeafFolderFound = false;
 
     if (currentFolderIndexInFlatList !== -1) {
       for (let i = currentFolderIndexInFlatList + 1; i < flatFolderList.value.length; i++) {
         const potentialNextFolder = flatFolderList.value[i];
-        if (leafFolderList.value.includes(potentialNextFolder)) {
+        if (leafFolderSet.value.has(potentialNextFolder)) {
           targetFolder = potentialNextFolder;
           targetIdx = 0;
           isMovingFolder = true;
@@ -172,7 +172,7 @@ async function prevImage() {
   let targetIdx = currentIndex.value - 1;
 
   if (targetIdx < 0) {
-    const currentLeafIndex = leafFolderList.value.indexOf(currentFolder.value);
+    const currentLeafIndex = leafFolderIndexMap.value.get(currentFolder.value) ?? -1;
     if (currentLeafIndex > 0) {
       const prevLeafFolderPath = leafFolderList.value[currentLeafIndex - 1];
       await loadImagesForPath(prevLeafFolderPath, resetZoom);
@@ -231,7 +231,7 @@ function goToRandomFolder() {
 }
 
 function goToNextLeafFolder() {
-  const idx = leafFolderList.value.indexOf(currentFolder.value);
+  const idx = leafFolderIndexMap.value.get(currentFolder.value) ?? -1;
   if (idx !== -1 && idx + 1 < leafFolderList.value.length) {
     handleFolderSelected(leafFolderList.value[idx + 1]);
   } else if (idx === -1 && leafFolderList.value.length > 0) {
@@ -240,7 +240,7 @@ function goToNextLeafFolder() {
 }
 
 function goToPrevLeafFolder() {
-  const idx = leafFolderList.value.indexOf(currentFolder.value);
+  const idx = leafFolderIndexMap.value.get(currentFolder.value) ?? -1;
   if (idx > 0) {
     handleFolderSelected(leafFolderList.value[idx - 1]);
   } else if (idx === -1 && leafFolderList.value.length > 0) {

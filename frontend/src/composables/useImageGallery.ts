@@ -5,7 +5,10 @@ import { LogError } from '../../wailsjs/runtime/runtime';
 export function useImageGallery(
   currentFolder: Ref<string>,
   flatFolderList: Ref<string[]>,
-  leafFolderList: Ref<string[]>
+  leafFolderList: Ref<string[]>,
+  leafFolderSet: Ref<Set<string>>,
+  flatFolderIndexMap: Ref<Map<string, number>>,
+  leafFolderIndexMap: Ref<Map<string, number>>
 ) {
   const images = ref<string[]>([]);
   const currentIndex = ref<number>(-1);
@@ -24,13 +27,13 @@ export function useImageGallery(
   });
 
   const hasNextLeafFolder = computed(() => {
-    const currentFolderIndexInFlatList = flatFolderList.value.indexOf(currentFolder.value);
+    const currentFolderIndexInFlatList = flatFolderIndexMap.value.get(currentFolder.value) ?? -1;
     if (currentFolderIndexInFlatList === -1 || flatFolderList.value.length === 0) {
       return false;
     }
     for (let i = currentFolderIndexInFlatList + 1; i < flatFolderList.value.length; i++) {
       const potentialNextFolder = flatFolderList.value[i];
-      if (leafFolderList.value.includes(potentialNextFolder)) {
+      if (leafFolderSet.value.has(potentialNextFolder)) {
         return true;
       }
     }
@@ -38,7 +41,7 @@ export function useImageGallery(
   });
 
   const hasPreviousLeafFolder = computed(() => {
-    const currentFolderIndexInLeafList = leafFolderList.value.indexOf(currentFolder.value);
+    const currentFolderIndexInLeafList = leafFolderIndexMap.value.get(currentFolder.value) ?? -1;
     return currentFolderIndexInLeafList > 0;
   });
 
@@ -56,13 +59,13 @@ export function useImageGallery(
     let nextImagePath = "";
 
     if (images.value.length === 0 || nextIdx >= images.value.length) {
-      const currentFolderIndexInFlatList = flatFolderList.value.indexOf(currentFolder.value);
+      const currentFolderIndexInFlatList = flatFolderIndexMap.value.get(currentFolder.value) ?? -1;
       let nextLeafFolderFound = false;
 
       if (currentFolderIndexInFlatList !== -1) {
         for (let i = currentFolderIndexInFlatList + 1; i < flatFolderList.value.length; i++) {
           const potentialNextFolder = flatFolderList.value[i];
-          if (leafFolderList.value.includes(potentialNextFolder)) {
+          if (leafFolderSet.value.has(potentialNextFolder)) {
             nextFolder = potentialNextFolder;
             nextLeafFolderFound = true;
             break;

@@ -1,4 +1,4 @@
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { ListSubfolders } from '../../wailsjs/go/main/App';
 import { fs as models } from '../../wailsjs/go/models';
 import { LogError } from '../../wailsjs/runtime/runtime';
@@ -9,6 +9,20 @@ export function useFolderTree() {
   const leafFolderList = ref<string[]>([]);
   const isTreeLoading = ref<boolean>(false);
   const treeError = ref<string>("");
+
+  const leafFolderSet = computed(() => new Set(leafFolderList.value));
+
+  const flatFolderIndexMap = computed(() => {
+    const map = new Map<string, number>();
+    flatFolderList.value.forEach((path, index) => map.set(path, index));
+    return map;
+  });
+
+  const leafFolderIndexMap = computed(() => {
+    const map = new Map<string, number>();
+    leafFolderList.value.forEach((path, index) => map.set(path, index));
+    return map;
+  });
 
   function flattenTree(node: models.Folder | null): string[] {
     if (!node) return [];
@@ -66,6 +80,9 @@ export function useFolderTree() {
     folderTreeRoot,
     flatFolderList,
     leafFolderList,
+    leafFolderSet,
+    flatFolderIndexMap,
+    leafFolderIndexMap,
     isTreeLoading,
     treeError,
     loadFolderTree,
