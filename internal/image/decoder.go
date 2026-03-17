@@ -11,7 +11,21 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unsafe"
 )
+
+// fastBase64Encode efficiently encodes a byte slice into a base64 data URI string.
+// It pre-allocates a single buffer and uses unsafe.String to prevent memory allocations.
+func fastBase64Encode(mimeType string, data []byte) string {
+	prefix := "data:" + mimeType + ";base64,"
+	encodedLen := base64.StdEncoding.EncodedLen(len(data))
+	buf := make([]byte, len(prefix)+encodedLen)
+
+	copy(buf, prefix)
+	base64.StdEncoding.Encode(buf[len(prefix):], data)
+
+	return unsafe.String(unsafe.SliceData(buf), len(buf))
+}
 
 // ReadImage reads an image file (including HDR and RAF) and returns its base64 encoded content
 func ReadImage(filePath string) (string, error) {
@@ -26,8 +40,31 @@ func ReadImage(filePath string) (string, error) {
 		if rafData == nil || len(rafData.Jpeg) == 0 {
 			return "", fmt.Errorf("failed to extract JPEG from RAF file")
 		}
-		encoded := base64.StdEncoding.EncodeToString(rafData.Jpeg)
-		return fmt.Sprintf("data:image/jpeg;base64,%s", encoded), nil
+		return fastBase64Encode("image/jpeg", rafData.Jpeg), nil
+	}
+
+	// Fast path: bypass decoding/re-encoding for web-supported formats
+	// Browsers natively support these formats, so we just return their raw bytes encoded as base64.
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp":
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return "", fmt.Errorf("failed to read web-supported image: %w", err)
+		}
+		var mimeType string
+		switch ext {
+		case ".jpg", ".jpeg":
+			mimeType = "image/jpeg"
+		case ".png":
+			mimeType = "image/png"
+		case ".gif":
+			mimeType = "image/gif"
+		case ".bmp":
+			mimeType = "image/bmp"
+		case ".webp":
+			mimeType = "image/webp"
+		}
+		return fastBase64Encode(mimeType, data), nil
 	}
 
 	// Handle other formats using image.Decode
@@ -50,23 +87,7 @@ func ReadImage(filePath string) (string, error) {
 			return "", fmt.Errorf("failed to decode or read file: decodeErr=%v, readErr=%w", decodeErr, err)
 		}
 
-		var mimeType string
-		switch ext {
-		case ".jpg", ".jpeg":
-			mimeType = "image/jpeg"
-		case ".png":
-			mimeType = "image/png"
-		case ".gif":
-			mimeType = "image/gif"
-		case ".bmp":
-			mimeType = "image/bmp"
-		case ".webp":
-			mimeType = "image/webp"
-		default:
-			mimeType = "application/octet-stream"
-		}
-		encoded := base64.StdEncoding.EncodeToString(data)
-		return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded), nil
+		return fastBase64Encode("application/octet-stream", data), nil
 	}
 
 	// For successfully decoded images, encode as PNG
@@ -75,8 +96,7 @@ func ReadImage(filePath string) (string, error) {
 		return "", fmt.Errorf("failed to encode image to PNG: %w", err)
 	}
 
-	encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
-	return fmt.Sprintf("data:image/png;base64,%s", encoded), nil
+	return fastBase64Encode("image/png", buf.Bytes()), nil
 }
 
 // Note: Logging should be handled by the caller or a dedicated logging service.
