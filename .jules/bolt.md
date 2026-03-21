@@ -9,3 +9,7 @@
 ## 2024-06-25 - Array.includes() Performance Bottleneck in Vue Computed/Methods
 **Learning:** Found a major performance bottleneck where `.includes()` was used on large arrays (`leafFolderList`) within loops and frequently called methods/computed properties. In Vue reactivity, operations like this on large reactive arrays block the main thread and cause noticeable lag. A benchmark (`frontend/benchmark.mjs`) showed that `Set.has()` is ~31x faster for directory traversal lookups compared to `Array.includes()`.
 **Action:** Always pre-calculate a `Set` (often using a `computed` property) when doing frequent membership checks (`.includes()`) against a static or slowly-changing collection, especially within loops or reactive getters.
+
+## 2025-03-21 - Avoid Unnecessary Image Decoding Loops in Go Backend
+**Learning:** Returning web-supported image formats (.jpg, .png, .webp) via base64 encoded Data URIs directly from the Go backend is extremely slow when relying on `image.Decode` followed by `png.Encode`. Decoding these images into memory and re-encoding them wastes massive CPU and allocates heavily.
+**Action:** Implemented a fast path in `ReadImage` that checks the file extension. For web-supported formats, the file bytes are read directly into memory. Using a zero-copy base64 encoder (`unsafe.String`), this avoids allocating multiple large byte slices, preventing high GC pressure and reducing the time to process a standard JPEG by ~2900x.
