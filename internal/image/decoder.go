@@ -5,12 +5,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
-	"image/png"
 	_ "image/gif"
 	_ "image/jpeg"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
+	"unsafe"
 )
 
 // ReadImage reads an image file (including HDR and RAF) and returns its base64 encoded content
@@ -30,7 +31,47 @@ func ReadImage(filePath string) (string, error) {
 		return fmt.Sprintf("data:image/jpeg;base64,%s", encoded), nil
 	}
 
-	// Handle other formats using image.Decode
+	// Handle web-supported formats directly without decoding
+	var mimeType string
+	switch ext {
+	case ".jpg", ".jpeg":
+		mimeType = "image/jpeg"
+	case ".png":
+		mimeType = "image/png"
+	case ".gif":
+		mimeType = "image/gif"
+	case ".webp":
+		mimeType = "image/webp"
+	case ".bmp":
+		mimeType = "image/bmp"
+	default:
+		// Handle other formats using image.Decode
+		return decodeAndEncodeFallback(filePath, ext)
+	}
+
+	// For web-supported formats, read raw bytes and encode directly
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read file: %w", err)
+	}
+
+	// ⚡ Bolt: Zero-copy base64 encoding
+	// Pre-calculate required length to avoid multiple allocations during string creation
+	prefix := "data:" + mimeType + ";base64,"
+	encodedLen := base64.StdEncoding.EncodedLen(len(data))
+	buf := make([]byte, len(prefix)+encodedLen)
+
+	// Copy prefix and encode directly into the buffer
+	copy(buf, prefix)
+	base64.StdEncoding.Encode(buf[len(prefix):], data)
+
+	// Zero-copy string conversion to prevent memory allocation and GC pressure
+	return unsafe.String(unsafe.SliceData(buf), len(buf)), nil
+}
+
+// decodeAndEncodeFallback handles formats that aren't natively supported by web browsers
+// by decoding them via Go's image package and re-encoding as PNG
+func decodeAndEncodeFallback(filePath, ext string) (string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
@@ -50,21 +91,7 @@ func ReadImage(filePath string) (string, error) {
 			return "", fmt.Errorf("failed to decode or read file: decodeErr=%v, readErr=%w", decodeErr, err)
 		}
 
-		var mimeType string
-		switch ext {
-		case ".jpg", ".jpeg":
-			mimeType = "image/jpeg"
-		case ".png":
-			mimeType = "image/png"
-		case ".gif":
-			mimeType = "image/gif"
-		case ".bmp":
-			mimeType = "image/bmp"
-		case ".webp":
-			mimeType = "image/webp"
-		default:
-			mimeType = "application/octet-stream"
-		}
+		mimeType := "application/octet-stream"
 		encoded := base64.StdEncoding.EncodeToString(data)
 		return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded), nil
 	}
